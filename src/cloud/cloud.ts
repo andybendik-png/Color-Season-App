@@ -31,7 +31,7 @@ function load() {
     modsP = (async () => {
       const [app, auth, fs] = await Promise.all([import('firebase/app'), import('firebase/auth'), import('firebase/firestore')]);
       const a = app.initializeApp(firebaseConfig!);
-      const authI = auth.initializeAuth(a, { persistence: [auth.indexedDBLocalPersistence, auth.browserLocalPersistence] });
+      const authI = auth.initializeAuth(a, { persistence: [auth.indexedDBLocalPersistence, auth.browserLocalPersistence], popupRedirectResolver: auth.browserPopupRedirectResolver });
       return { app, auth, fs, authI, db: fs.getFirestore(a) };
     })();
   }
