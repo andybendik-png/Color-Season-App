@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Each signed-in user can read and write only their own data.
+    match /users/{uid}/{collection}/{docId} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && collection in ['samples', 'profiles', 'analyses', 'photos']
+        && request.resource.size() < 60;
+    }
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

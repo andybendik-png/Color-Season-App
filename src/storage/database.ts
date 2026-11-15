@@ -1,7 +1,7 @@
 /** Minimal promise wrapper around IndexedDB. All data stays on the device. */
 const DB_NAME = 'soft-summer-scanner';
-const DB_VERSION = 1;
-export type StoreName = 'samples' | 'profiles' | 'settings';
+const DB_VERSION = 2;
+export type StoreName = 'samples' | 'profiles' | 'settings' | 'analyses';
 
 let dbp: Promise<IDBDatabase> | null = null;
 function open(): Promise<IDBDatabase> {
@@ -14,6 +14,7 @@ function open(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('samples')) db.createObjectStore('samples', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('profiles')) db.createObjectStore('profiles', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('analyses')) db.createObjectStore('analyses', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

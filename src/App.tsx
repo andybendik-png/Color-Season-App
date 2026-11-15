@@ -8,6 +8,11 @@ import { ColourHistory } from './components/ColourHistory';
 import { ColourComparison } from './components/ColourComparison';
 import { HexAnalyser } from './components/HexAnalyser';
 import { InfoPanel } from './components/InfoPanel';
+import { SelfieStudio } from './components/SelfieStudio';
+import { AccountPanel } from './components/AccountPanel';
+import { cloudConfigured, pushAnalysis, pushProfile, pushSample, removeAnalysis, removeProfile as removeCloudProfile, removeSample, watchUser, type CloudUser } from './cloud/cloud';
+import { syncAll } from './cloud/sync';
+import { deleteAnalysis, listAnalyses, putAnalysis, type SavedAnalysis } from './storage/analyses';
 import { applyCorrection, IDENTITY_CORRECTION, type CorrectionSettings } from './engine/colourCorrection';
 import { describeHex, srgbToHex, hexToSrgb } from './engine/colourConversion';
 import { analyseColour, analyseHex } from './engine/seasonalMatching';
@@ -15,9 +20,9 @@ import { deleteProfile, listProfiles, newProfile, saveProfile, type CalibrationP
 import { deleteSample, exportAll, importAll, listSamples, putSample, type SavedSample } from './storage/colourHistory';
 import { getSetting, setSetting, uid } from './storage/database';
 
-type Tab = 'scan' | 'hex' | 'saved' | 'compare' | 'calibrate' | 'info';
+type Tab = 'scan' | 'selfie' | 'hex' | 'saved' | 'compare' | 'calibrate' | 'info';
 const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'scan', label: 'Scan', icon: '◎' }, { id: 'hex', label: 'HEX', icon: '#' }, { id: 'saved', label: 'Saved', icon: '▦' },
+  { id: 'scan', label: 'Scan', icon: '◎' }, { id: 'selfie', label: 'Me', icon: '☺' }, { id: 'hex', label: 'HEX', icon: '#' }, { id: 'saved', label: 'Saved', icon: '▦' },
   { id: 'compare', label: 'Compare', icon: '⇄' }, { id: 'calibrate', label: 'Calibrate', icon: '≈' }, { id: 'info', label: 'Guide', icon: 'i' },
 ];
 
@@ -35,14 +40,21 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [storageOk, setStorageOk] = useState(true);
   const [hexSeed, setHexSeed] = useState('#8E9196');
+  const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
+  const [user, setUser] = useState<CloudUser | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  // Fire-and-forget cloud write when signed in; failures are reported but never block local saves.
+  const cloud = useCallback((fn: () => Promise<unknown>) => { if (user) fn().catch(() => setToast('Saved on this device; cloud sync failed. Use Sync now in Account.')); }, [user]);
 
   const say = useCallback((m: string) => { setToast(m); window.setTimeout(() => setToast((t) => (t === m ? null : t)), 2400); }, []);
 
   useEffect(() => {
     (async () => {
       try {
-        const [p, s] = await Promise.all([listProfiles(), listSamples()]);
-        setProfiles(p); setSamples(s);
+        const [p, s, an] = await Promise.all([listProfiles(), listSamples(), listAnalyses()]);
+        setProfiles(p); setSamples(s); setAnalyses(an);
         const a = await getSetting<string | null>('activeProfile', null);
         const pr = p.find((x) => x.id === a);
         if (pr) { setActiveId(pr.id); setDraft({ ...pr.settings }); }
@@ -51,6 +63,25 @@ export default function App() {
       } catch { setStorageOk(false); }
     })();
   }, []);
+
+  const doSync = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const r = await syncAll();
+      const [p, sm, an] = await Promise.all([listProfiles(), listSamples(), listAnalyses()]);
+      setProfiles(p); setSamples(sm); setAnalyses(an);
+      setLastSync(new Date().toLocaleTimeString(undefined, { timeStyle: 'short' }));
+      if (r.pulled || r.pushed) say(`Synced: ${r.pulled} down, ${r.pushed} up`);
+    } catch { say('Sync failed. Check your connection.'); }
+    finally { setSyncing(false); }
+  }, [say]);
+
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    watchUser((u) => setUser(u)).then((f) => { off = f; }).catch(() => undefined);
+    return () => off?.();
+  }, []);
+  useEffect(() => { if (user) doSync(); }, [user, doSync]);
 
   const active = profiles.find((p) => p.id === activeId) ?? null;
   // On the Calibrate tab the draft is previewed; elsewhere the saved active profile applies.
@@ -94,16 +125,16 @@ export default function App() {
       profile: used === 'corrected' && profile ? { id: profile.id, name: profile.name, lighting: profile.lighting, settings: { ...profile.settings } } : null,
       inPalette: /Strong|Good/.test(a.primary.result.match),
     };
-    try { await putSample(s); setSamples((x) => [s, ...x]); say('Saved'); } catch { say('Could not save — storage unavailable'); }
-  }, [say]);
+    try { await putSample(s); setSamples((x) => [s, ...x]); say('Saved'); cloud(() => pushSample(s)); } catch { say('Could not save — storage unavailable'); }
+  }, [say, cloud]);
 
   const saveCurrent = () => {
     if (!measured || !current) return;
     saveFrom(measured.rawHex, measured.correctedHex, basis, current.source === 'picker' ? 'picker' : 'camera', current.stability, active);
   };
 
-  const updateSample = async (s: SavedSample) => { await putSample(s); setSamples((x) => x.map((y) => (y.id === s.id ? s : y))); };
-  const removeSample = async (id: string) => { await deleteSample(id); setSamples((x) => x.filter((y) => y.id !== id)); setCompareIds((c) => c.filter((y) => y !== id)); };
+  const updateSample = async (s: SavedSample) => { await putSample(s); setSamples((x) => x.map((y) => (y.id === s.id ? s : y))); cloud(() => pushSample(s)); };
+  const dropSample = async (id: string) => { await deleteSample(id); setSamples((x) => x.filter((y) => y.id !== id)); setCompareIds((c) => c.filter((y) => y !== id)); cloud(() => removeSample(id)); };
   const toggleCompare = (id: string) => setCompareIds((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
 
   const activate = (id: string | null) => {
@@ -114,6 +145,7 @@ export default function App() {
   const persistProfile = async (p: CalibrationProfile) => {
     await saveProfile(p);
     setProfiles((x) => x.map((y) => (y.id === p.id ? { ...p, updatedAt: Date.now() } : y)));
+    cloud(() => pushProfile({ ...p, updatedAt: Date.now() }));
     if (p.id === activeId) setDraft({ ...p.settings });
     say('Profile saved');
   };
@@ -121,12 +153,14 @@ export default function App() {
     const p = newProfile(name, lighting, s);
     await saveProfile(p);
     setProfiles((x) => [...x, p]);
+    cloud(() => pushProfile(p));
     setActiveId(p.id); setSetting('activeProfile', p.id); setDraft({ ...p.settings });
     say(`Profile “${name}” saved and applied`);
   };
   const removeProfile = async (id: string) => {
     await deleteProfile(id);
     setProfiles((x) => x.filter((y) => y.id !== id));
+    cloud(() => removeCloudProfile(id));
     if (activeId === id) activate(null);
   };
 
@@ -144,6 +178,7 @@ export default function App() {
       const json = JSON.parse(await file.text());
       const r = await importAll(json, false);
       setSamples(await listSamples()); setProfiles(await listProfiles());
+      if (user) doSync();
       say(`Imported ${r.samples} colours, ${r.profiles} profiles`);
     } catch (e) { say(e instanceof Error ? e.message : 'Import failed'); }
   };
@@ -156,7 +191,11 @@ export default function App() {
     <div className="app">
       <header className="appbar">
         <h1 className="appbar__title">Soft Summer <span>Scanner</span></h1>
-        {active && tab !== 'calibrate' && <span className="appbar__profile" title="Active calibration profile">{active.name}</span>}
+        <div className="appbar__right">
+          {active && tab !== 'calibrate' && <span className="appbar__profile" title="Active calibration profile">{active.name}</span>}
+          {cloudConfigured() && <button className="appbar__acct" onClick={() => setAccountOpen(true)} aria-label="Account">{user ? (user.email?.[0] ?? '•').toUpperCase() : 'Sign in'}</button>}
+          {!cloudConfigured() && <button className="appbar__acct appbar__acct--off" onClick={() => setAccountOpen(true)} aria-label="Account">Account</button>}
+        </div>
       </header>
       {!storageOk && <p className="banner">Local storage is unavailable (private browsing?). Samples and profiles will not be kept.</p>}
 
@@ -174,9 +213,14 @@ export default function App() {
             ) : camera.state === 'live' ? <p className="small muted center">Reading colour…</p> : null}
           </>
         )}
+        {tab === 'selfie' && (
+          <SelfieStudio saved={analyses} signedIn={!!user}
+            onSave={async (a) => { await putAnalysis(a); setAnalyses((x) => [a, ...x.filter((y) => y.id !== a.id)]); say('Analysis saved'); cloud(() => pushAnalysis(a)); }}
+            onDelete={async (id) => { await deleteAnalysis(id); setAnalyses((x) => x.filter((y) => y.id !== id)); cloud(() => removeAnalysis(id)); }} />
+        )}
         {tab === 'hex' && <HexAnalyser key={hexSeed} initial={hexSeed} onCopy={copy} onSave={(hex) => saveFrom(hex, hex, 'raw', 'manual')} />}
         {tab === 'saved' && (
-          <ColourHistory samples={samples} compareIds={compareIds} onToggleCompare={toggleCompare} onUpdate={updateSample} onDelete={removeSample}
+          <ColourHistory samples={samples} compareIds={compareIds} onToggleCompare={toggleCompare} onUpdate={updateSample} onDelete={dropSample}
             onCopy={copy} onOpen={openSample} onExport={doExport} onImport={doImport} />
         )}
         {tab === 'compare' && <ColourComparison samples={samples} compareIds={compareIds} onToggle={toggleCompare} onClear={() => setCompareIds([])} />}
@@ -191,6 +235,7 @@ export default function App() {
       </main>
 
       {toast && <div className="toast" role="status">{toast}</div>}
+      {accountOpen && <AccountPanel user={user} syncing={syncing} lastSync={lastSync} onSync={doSync} onClose={() => setAccountOpen(false)} />}
 
       <nav className="tabbar" aria-label="Sections">
         {TABS.map((t) => (

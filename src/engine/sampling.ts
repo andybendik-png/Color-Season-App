@@ -74,3 +74,23 @@ export function displayToVideo(dx: number, dy: number, cw: number, ch: number, v
   const offX = (cw - vw * scale) / 2, offY = (ch - vh * scale) / 2;
   return { x: (dx - offX) / scale, y: (dy - offY) / scale, scale };
 }
+
+/** Ring sample (e.g. iris without pupil and catch-lights): radii as fractions of R. */
+export function sampleAnnulus(data: Uint8ClampedArray, width: number, height: number, cx: number, cy: number, R: number, inner = 0.4, outer = 0.85): SampleResult | null {
+  const px: { r: number; g: number; b: number; y: number }[] = [];
+  const r0 = (inner * R) ** 2, r1 = (outer * R) ** 2;
+  for (let y = Math.max(0, Math.floor(cy - R)); y <= Math.min(height - 1, Math.ceil(cy + R)); y++) {
+    for (let x = Math.max(0, Math.floor(cx - R)); x <= Math.min(width - 1, Math.ceil(cx + R)); x++) {
+      const d = (x - cx) ** 2 + (y - cy) ** 2;
+      if (d < r0 || d > r1) continue;
+      const i = (y * width + x) * 4;
+      px.push({ r: data[i], g: data[i + 1], b: data[i + 2], y: 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2] });
+    }
+  }
+  if (px.length < 4) return null;
+  px.sort((a, b) => a.y - b.y);
+  // drop darkest 15% (lashes, limbal ring shadow) and brightest 20% (catch-lights)
+  const kept = px.slice(Math.floor(px.length * 0.15), Math.ceil(px.length * 0.8));
+  const med = (k: 'r' | 'g' | 'b') => { const a = kept.map((p) => p[k]).sort((x, y) => x - y); return a[a.length >> 1] / 255; };
+  return { srgb: [med('r'), med('g'), med('b')], spread: 0, pixels: px.length, kept: kept.length };
+}

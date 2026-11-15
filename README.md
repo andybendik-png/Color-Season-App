@@ -14,6 +14,10 @@ Everything runs on the device. No account, no backend, no uploads. Works offline
 - **Compare**: put saved or typed colours side by side, with a ΔE00 matrix and the better Soft Summer match.
 - **HEX analyser**: type a HEX value to analyse it without the camera. Includes a test bench of known values.
 - **Guide**: palette browser for all 637 reference colours, plus method notes and limitations.
+- **Me (selfie analysis)**: take or upload a photo. On-device face landmarks (MediaPipe) place sample points on the cheeks, forehead, chin, hair, irises and brows, and you can drag any of them. An optional white reference removes the colour cast. The app measures skin hue angle, L* and C*, hair and eye colour and feature contrast, scores warm/cool, light/deep and soft/clear, and ranks the 12 seasons with a confidence level.
+- **Drape test**: 9 side-by-side virtual drape comparisons (chroma, then temperature, then value), combined 60/40 with the photo measurement.
+- **Brows**: classic brow mapping (start at the nose ala / inner corner, peak above the outer iris toward the eye corner, tail on the ala–outer-corner line). Shows guide lines, the suggested shape, trim (red) and fill (green) areas, a simulated "after" view, advice per brow in approximate mm (scaled from the iris), symmetry, face-shape adjustment and a pencil shade.
+- **Accounts (optional)**: Firebase email/password or Google sign-in. Two-way sync of colours, profiles and analyses (with photos). See `FIREBASE_SETUP.md`.
 
 ## Setup
 ```bash
@@ -75,6 +79,12 @@ The raw and corrected values are always kept separately and saved with each samp
 | Palettes | ≥ 50 per season, profile coherence, warm-vs-cool ordering | pass |
 | Camera pipeline (end-to-end) | Headless Chrome with a synthetic camera feed of #6D7F98 (YUV 4:2:0) | sampled **#6D7F99** |
 | Camera vs real objects | **Not validated.** Passing maths tests does not make camera readings accurate. | — |
+
+## Selfie analysis: method and honesty
+- Research notes, with sources, are in the project doc `research-selfie-season-and-brows.md`.
+- Selfie-based season analysis is unreliable. Studios testing popular apps under daylight lighting got the right broad season only about half the time. The app shows a ranking with a confidence level, lists photo-quality warnings, and recommends physical draping as the reference.
+- The scoring thresholds in `src/engine/faceAnalysis.ts` are documented heuristics. They have not been validated against professionally draped people.
+- The face model (`face_landmarker.task`) is downloaded during the GitHub Actions build (`npm run fetch-model`) and served from the app's own origin, so detection works offline and photos never leave the device for analysis. Without it, the points start in a default layout and you place them by hand.
 
 ## Known limitations
 - A phone camera does not measure physical colour. Auto white balance, exposure, HDR and tone mapping all change the reading, and iOS Safari rarely lets you lock them.
