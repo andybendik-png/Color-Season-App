@@ -53,7 +53,7 @@ export function pointsFromLandmarks(lm: Pt[]): Record<PointKey, SamplePoint> {
     cheekR: { ...lm[280], r: skinR, kind: 'skin', label: 'Cheek' },
     forehead: { ...fh, r: skinR, kind: 'skin', label: 'Forehead' },
     chin: { ...mid(152, 17, 0.45), r: skinR * 0.8, kind: 'skin', label: 'Chin' },
-    hairTop: { x: lm[10].x + u.x * len * 0.2, y: lm[10].y + u.y * len * 0.2, r: skinR, kind: 'hair', label: 'Hair' },
+    hairTop: { x: lm[10].x + u.x * len * 0.3, y: lm[10].y + u.y * len * 0.3, r: skinR, kind: 'hair', label: 'Hair' },
     hairSide: { x: lm[left].x - (lm[454].x - lm[234].x) * 0.06 * Math.sign(lm[454].x - lm[234].x) + u.x * len * 0.35, y: lm[left].y + u.y * len * 0.35, r: skinR * 0.8, kind: 'hair', label: 'Hair' },
     eyeL: { ...lm[468], r: irisR(468), kind: 'eye', label: 'Iris' },
     eyeR: { ...lm[473], r: irisR(473), kind: 'eye', label: 'Iris' },

@@ -187,7 +187,7 @@ export function SelfieStudio({ saved, onSave, onDelete, signedIn }: Props) {
           </div>
 
           {sub === 'colour' && analysis && <PersonResult a={analysis} combined={combined} />}
-          {sub === 'drape' && faceBox && <DrapeTest photo={photo} chinY={points.chin.y + Math.abs(points.chin.y - points.cheekL.y) * 0.6} faceBox={faceBox} initial={drape} onDone={(d) => { setDrape(d); }} />}
+          {sub === 'drape' && faceBox && <DrapeTest photo={photo} chinY={points.chin.y + Math.abs(points.chin.y - points.cheekL.y) * 0.3} faceBox={faceBox} initial={drape} onDone={(d) => { setDrape(d); }} />}
           {sub === 'brows' && <BrowStudio photo={photo} landmarks={landmarks} style={browStyle} onStyle={setBrowStyle} colours={analysis} />}
         </>
       )}

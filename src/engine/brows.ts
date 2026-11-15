@@ -153,22 +153,43 @@ export function analyseBrows(lm: Pt[], style: BrowStyle = 'soft'): BrowAnalysis 
     // optional: stop 0–2 mm short for a lifted look
     tailX -= outward * (style === 'defined' ? 2 : 0) / mmPerPx;
 
+    // Target arch profile for the LOWER edge, anchored at the current head. Real shaping can only
+    // lift the lower edge by trimming beneath it (max ~2.5 mm) or fill a little below (max ~1 mm),
+    // so the ideal follows the person's own brow instead of being pasted on top of it.
     const arch = ARCH[style] * SHAPE_ARCH[shape] * headThick;
     const tailLift = style === 'straight' ? 0.05 * headThick : 0.15 * headThick; // tail not below head
-    const lowerIdeal = smooth([
+    const target = smooth([
       { x: startX, y: headLowerY },
       { x: startX + (peakX - startX) * 0.5, y: headLowerY - arch * 0.55 },
       { x: peakX, y: headLowerY - arch },
       { x: tailX, y: headLowerY - tailLift - arch * 0.25 },
     ]);
+    const maxLift = 2.5 / mmPerPx, maxDrop = 1 / mmPerPx;
+    const curAt = (poly: Pt[], x: number) => {
+      const v = yAt(poly, x);
+      if (v !== null) return v;
+      const srt = [...poly].sort((p, q) => p.x - q.x);
+      const [e0, e1] = x < srt[0].x ? [srt[0], srt[1]] : [srt[srt.length - 1], srt[srt.length - 2]];
+      const slope = Math.max(-0.6, Math.min(0.6, (e0.y - e1.y) / (e0.x - e1.x || 1)));
+      return e0.y + slope * (x - e0.x);
+    };
     const thickAt = (x: number) => {
       const u = (x - startX) / (tailX - startX || 1); // 0 at start, 1 at tail
       const tailT = TAIL_THICKNESS[style];
       const pu = (peakX - startX) / (tailX - startX || 1);
       return headThick * (u <= pu ? 1 - 0.12 * (u / pu) : 0.88 - (0.88 - tailT) * ((u - pu) / (1 - pu)));
     };
-    const upperIdeal = lowerIdeal.map((p) => ({ x: p.x, y: p.y - thickAt(p.x) }));
-
+    const lowerIdeal = target.map((p) => {
+      const cur = curAt(lower, p.x);
+      return { x: p.x, y: Math.max(cur - maxLift, Math.min(cur + maxDrop, p.y)) };
+    });
+    const upperIdeal = lowerIdeal.map((p) => {
+      const t = thickAt(p.x);
+      const cur = curAt(upper, p.x);
+      // keep the natural top line, but taper towards the tail and keep a minimum thickness
+      const y = Math.max(cur, p.y - t * 1.05);
+      return { x: p.x, y: Math.min(y, p.y - t * 0.6) };
+    });
     // advice (mm, positive = outward/longer/higher)
     const mm = (px: number) => px * mmPerPx;
     const startOffsetMm = mm(outward * (start.x - startX)); // + : starts too far out (gap), − : too close to nose
@@ -192,7 +213,7 @@ export function analyseBrows(lm: Pt[], style: BrowStyle = 'soft'): BrowAnalysis 
       side: ic.x < 0 ? 'A' : 'B',
       outward, iris: { c: ic, r: iris.r },
       current: { upper, lower, start, tail, peak, thickness },
-      ideal: { upper: upperIdeal, lower: lowerIdeal, start: { x: startX, y: headLowerY }, peak: { x: peakX, y: headLowerY - arch }, tail: { x: tailX, y: headLowerY - tailLift } },
+      ideal: { upper: upperIdeal, lower: lowerIdeal, start: lowerIdeal[0], peak: lowerIdeal.reduce((m, p) => (Math.abs(p.x - peakX) < Math.abs(m.x - peakX) ? p : m), lowerIdeal[0]), tail: lowerIdeal[lowerIdeal.length - 1] },
       guides: {
         ala: A, startTop: { x: startX, y: headLowerY - headThick * 3 }, limbus: { x: limbusX, y: ic.y },
         peakLine: [A, { x: A.x + (limbusX - A.x) * 2.2, y: A.y + (ic.y - A.y) * 2.2 }],

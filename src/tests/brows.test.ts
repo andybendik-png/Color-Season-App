@@ -48,7 +48,9 @@ describe('brow mapping', () => {
       const o = s.outward;
       expect(o * (s.ideal.peak.x - s.guides.limbus.x)).toBeGreaterThanOrEqual(0);
       expect(o * (s.ideal.tail.x - s.ideal.peak.x)).toBeGreaterThan(0);
-      expect(s.ideal.tail.y).toBeLessThanOrEqual(s.ideal.start.y + 1e-6); // tail not below head
+      expect(s.ideal.peak.y).toBeLessThan(s.ideal.start.y); // arch rises from the head
+      // the suggested lower edge stays within realistic trimming limits of the real brow
+      s.ideal.lower.forEach((p) => { const cur = yAt(s.current.lower, p.x); if (cur !== null) expect(Math.abs(p.y - cur) * a.mmPerPx).toBeLessThanOrEqual(2.5 + 1e-6); });
     }
   });
   it('is symmetric for a symmetric face and robust to head roll', () => {

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { analyseBrows, inside, outline, type BrowStyle, type Pt, type BrowAnalysis } from '../engine/brows';
+import { analyseBrows, inside, outline, yAt, type BrowStyle, type Pt, type BrowAnalysis } from '../engine/brows';
 import { describeSrgb, labToXyz, xyzToLinearRgb, linearToSrgb, srgbToHex, labToLch, type Lab, type Vec3 } from '../engine/colourConversion';
 import type { PersonalAnalysis } from '../engine/faceAnalysis';
 
 interface Props { photo: HTMLCanvasElement; landmarks: Pt[] | null; style: BrowStyle; onStyle: (s: BrowStyle) => void; colours: PersonalAnalysis | null }
 type View = 'guides' | 'after' | 'before';
 
-interface Masks { trim: Uint8Array; fill: Uint8Array; x0: number; y0: number; w: number; h: number; trimMm2: number; fillMm2: number; skin: Vec3; brow: Vec3 }
+interface Masks { trim: Uint8Array; fill: Uint8Array; hair: Uint8Array; x0: number; y0: number; w: number; h: number; trimMm2: number; fillMm2: number; skin: Vec3; brow: Vec3 }
 
 function labToHex(l: Lab) { return srgbToHex(linearToSrgb(xyzToLinearRgb(labToXyz(l)))); }
 
@@ -18,7 +18,8 @@ function computeMasks(photo: HTMLCanvasElement, a: BrowAnalysis): Masks | null {
     const xs = [s.ideal.start.x, s.ideal.tail.x, s.current.start.x, s.current.tail.x];
     const ys = [...s.ideal.upper.map((p) => p.y), ...s.current.upper.map((p) => p.y)];
     const xMin = Math.min(...xs) - 6 * mmPx, xMax = Math.max(...xs) + 4 * mmPx;
-    const yMin = Math.min(...ys) - 5 * mmPx, yMax = s.iris.c.y - s.iris.r * 1.5;
+    const lows = [...s.ideal.lower.map((p) => p.y), ...s.current.lower.map((p) => p.y)];
+    const yMin = Math.min(...ys) - 3 * mmPx, yMax = Math.min(s.iris.c.y - s.iris.r * 1.5, Math.max(...lows) + 3 * mmPx);
     for (const p of [{ x: xMin, y: yMin }, { x: xMax, y: yMin }, { x: xMin, y: yMax }, { x: xMax, y: yMax }]) pts.push(a.frame.toImage(p));
   }
   const x0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x)))), x1 = Math.min(photo.width - 1, Math.ceil(Math.max(...pts.map((p) => p.x))));
@@ -27,7 +28,7 @@ function computeMasks(photo: HTMLCanvasElement, a: BrowAnalysis): Masks | null {
   if (w < 10 || h < 10) return null;
   const data = photo.getContext('2d', { willReadFrequently: true } as CanvasRenderingContext2DSettings)!.getImageData(x0, y0, w, h).data;
   const lum = (i: number) => 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-  const trim = new Uint8Array(w * h), fill = new Uint8Array(w * h);
+  const trim = new Uint8Array(w * h), fill = new Uint8Array(w * h), hairM = new Uint8Array(w * h);
   let trimN = 0, fillN = 0;
   const skinPx: number[][] = [], browPx: number[][] = [];
   for (const s of a.sides) {
@@ -37,25 +38,32 @@ function computeMasks(photo: HTMLCanvasElement, a: BrowAnalysis): Masks | null {
     const xs = [s.ideal.start.x, s.ideal.tail.x, s.current.start.x, s.current.tail.x];
     const ys = [...s.ideal.upper.map((p) => p.y), ...s.current.upper.map((p) => p.y)];
     const lx0 = Math.min(...xs) - 6 * mmPx, lx1 = Math.max(...xs) + 4 * mmPx;
-    const ly0 = Math.min(...ys) - 5 * mmPx, ly1 = s.iris.c.y - s.iris.r * 1.5;
+    const lows = [...s.ideal.lower.map((p) => p.y), ...s.current.lower.map((p) => p.y)];
+    const ly0 = Math.min(...ys) - 3 * mmPx, ly1 = Math.min(s.iris.c.y - s.iris.r * 1.5, Math.max(...lows) + 3 * mmPx);
     // reference luminances: inside current brow vs band of skin above it
     const inL: number[] = [], outL: number[] = [];
     for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
       const L = a.frame.toLocal({ x: x + x0, y: y + y0 });
       if (L.x < lx0 || L.x > lx1 || L.y < ly0 || L.y > ly1) continue;
       const i = (y * w + x) * 4;
-      if (inside(cur, L)) inL.push(lum(i)); else if (!inside(ideal, L)) outL.push(lum(i));
+      const top = Math.min(yAt(s.current.upper, L.x) ?? Infinity, yAt(s.ideal.upper, L.x) ?? Infinity);
+      if (inside(cur, L)) inL.push(lum(i));
+      else if (Number.isFinite(top) && L.y < top - 1 * mmPx) outL.push(lum(i)); // forehead skin above the brow only (eye-socket shadow excluded)
     }
     if (inL.length < 10 || outL.length < 10) continue;
     inL.sort((p, q) => p - q); outL.sort((p, q) => p - q);
     const browY = inL[Math.floor(inL.length * 0.35)], skinY = outL[Math.floor(outL.length * 0.6)];
     if (skinY - browY < 8) continue; // brows too faint to separate from skin in this photo
-    const thr = (browY + skinY) / 2;
+    const thr = browY + 0.42 * (skinY - browY);
+    const lowerAt = (x: number) => Math.max(yAt(s.current.lower, x) ?? -Infinity, yAt(s.ideal.lower, x) ?? -Infinity);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const L = a.frame.toLocal({ x: x + x0, y: y + y0 });
       if (L.x < lx0 || L.x > lx1 || L.y < ly0 || L.y > ly1) continue;
       const i = (y * w + x) * 4;
-      const hair = lum(i) < thr;
+      // below the brow, only pixels within ~1.5 mm of the lower edge count as stray hairs (deeper = eye-socket shadow)
+      const lo = lowerAt(L.x);
+      const hair = lum(i) < thr && !(Number.isFinite(lo) && L.y > lo + 1.5 * mmPx);
+      if (hair) hairM[y * w + x] = 1;
       const inIdeal = inside(ideal, L);
       if (hair && !inIdeal) { trim[y * w + x] = 1; trimN++; }
       if (!hair && inIdeal) { fill[y * w + x] = 1; fillN++; }
@@ -68,7 +76,7 @@ function computeMasks(photo: HTMLCanvasElement, a: BrowAnalysis): Masks | null {
   const skin: Vec3 = [med(skinPx, 0), med(skinPx, 1), med(skinPx, 2)];
   const brow: Vec3 = browPx.length ? [med(browPx, 0), med(browPx, 1), med(browPx, 2)] : [0.3, 0.27, 0.25];
   const mm2 = a.mmPerPx * a.mmPerPx;
-  return { trim, fill, x0, y0, w, h, trimMm2: trimN * mm2, fillMm2: fillN * mm2, skin, brow };
+  return { trim, fill, hair: hairM, x0, y0, w, h, trimMm2: trimN * mm2, fillMm2: fillN * mm2, skin, brow };
 }
 
 export function BrowStudio({ photo, landmarks, style, onStyle, colours }: Props) {
@@ -94,11 +102,32 @@ export function BrowStudio({ photo, landmarks, style, onStyle, colours }: Props)
     if (masks && view !== 'before') {
       const img = wctx.getImageData(masks.x0, masks.y0, masks.w, masks.h);
       const d = img.data;
+      const orig = new Uint8ClampedArray(d);
       for (let j = 0; j < masks.w * masks.h; j++) {
         const i = j * 4;
         if (view === 'after') {
-          if (masks.trim[j]) { const n = 1 + (Math.random() - 0.5) * 0.03; d[i] = masks.skin[0] * 255 * n; d[i + 1] = masks.skin[1] * 255 * n; d[i + 2] = masks.skin[2] * 255 * n; }
-          else if (masks.fill[j]) { const a = 0.55; d[i] = d[i] * (1 - a) + masks.brow[0] * 255 * a; d[i + 1] = d[i + 1] * (1 - a) + masks.brow[1] * 255 * a; d[i + 2] = d[i + 2] * (1 - a) + masks.brow[2] * 255 * a; }
+          if (masks.trim[j]) {
+            // inpaint: take the nearest pixel above/below that is neither hair-to-trim nor brow
+            const x = j % masks.w, y = (j / masks.w) | 0;
+            let src = -1;
+            for (let k = 1; k < 40 && src < 0; k++) {
+              for (const yy of [y - k, y + k]) {
+                if (yy < 0 || yy >= masks.h) continue;
+                const jj = yy * masks.w + x;
+                if (!masks.trim[jj] && !masks.fill[jj] && !masks.hair[jj]) { src = jj; break; }
+              }
+            }
+            const si = src >= 0 ? src * 4 : -1;
+            const sk = si >= 0 ? [orig[si], orig[si + 1], orig[si + 2]] : masks.skin.map((c) => c * 255);
+            d[i] = sk[0]; d[i + 1] = sk[1]; d[i + 2] = sk[2];
+          } else if (masks.fill[j]) {
+            // hair-like strokes rather than a solid block
+            const x = j % masks.w, y = (j / masks.w) | 0;
+            const L = analysis.frame.toLocal({ x: x + masks.x0, y: y + masks.y0 });
+            const st = analysis.mmPerPx > 0 ? (L.x * 0.55 + L.y) * analysis.mmPerPx : 0; // strokes slanting along the brow
+            const a = ((st % 0.9) + 0.9) % 0.9 < 0.35 ? 0.55 : 0.18;
+            d[i] = d[i] * (1 - a) + masks.brow[0] * 255 * a; d[i + 1] = d[i + 1] * (1 - a) + masks.brow[1] * 255 * a; d[i + 2] = d[i + 2] * (1 - a) + masks.brow[2] * 255 * a;
+          }
         } else {
           if (masks.trim[j]) { d[i] = d[i] * 0.45 + 220 * 0.55; d[i + 1] = d[i + 1] * 0.45 + 60 * 0.55; d[i + 2] = d[i + 2] * 0.45 + 80 * 0.55; }
           else if (masks.fill[j]) { d[i] = d[i] * 0.6 + 70 * 0.4; d[i + 1] = d[i + 1] * 0.6 + 170 * 0.4; d[i + 2] = d[i + 2] * 0.6 + 130 * 0.4; }
@@ -165,7 +194,7 @@ export function BrowStudio({ photo, landmarks, style, onStyle, colours }: Props)
         {view === 'guides' && <p className="small"><span className="key key--trim" /> trim / tweeze · <span className="key key--fill" /> fill with pencil or powder · white outline = suggested shape</p>}
         {!masks && <p className="small warn">The brow hairs could not be separated from the skin in this photo (low contrast or soft focus), so only the outline is shown.</p>}
         {masks && <p className="small muted">About {masks.trimMm2.toFixed(0)} mm² to remove and {masks.fillMm2.toFixed(0)} mm² to fill, across both brows.</p>}
-        <p className="small muted">Face shape estimate: {analysis.faceShape}. {analysis.summary.join(' ')} Millimetres are approximate (scaled from the iris, ≈11.7 mm).</p>
+        <p className="small muted">Works best on a sharp, straight-on photo in even light, with brows visible. Face shape estimate: {analysis.faceShape}. {analysis.summary.join(' ')} Millimetres are approximate (scaled from the iris, ≈11.7 mm).</p>
       </div>
       {[sA, sB].map((s) => (
         <div className="card" key={s.side}>
