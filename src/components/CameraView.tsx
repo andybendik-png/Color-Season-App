@@ -16,9 +16,10 @@ interface Props {
   onSize: (s: SizeKey) => void;
   compact?: boolean;
   previewHex?: string;
+  seasonChip?: { text: string; tone: 'ok' | 'warn' | 'bad' } | null;
 }
 
-export function CameraView({ camera, onSample, size, onSize, compact, previewHex }: Props) {
+export function CameraView({ camera, onSample, size, onSize, compact, previewHex, seasonChip }: Props) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const frozenRef = useRef<HTMLCanvasElement | null>(null);
   const [frozen, setFrozen] = useState(false);
@@ -97,6 +98,7 @@ export function CameraView({ camera, onSample, size, onSize, compact, previewHex
           <div className="camera__chips">
             <span className={`chip ${frozen ? 'chip--paused' : 'chip--live'}`}>{frozen ? (pick ? 'Paused · picked point' : 'Paused · tap to pick') : 'Live'}</span>
             {stability && !frozen && <span className={`chip chip--${stability === 'Stable' ? 'ok' : stability === 'Moderate variation' ? 'warn' : 'bad'}`}>{stability}</span>}
+            {seasonChip && <span className={`chip chip--season chip--${seasonChip.tone}`}>{seasonChip.text}</span>}
           </div>
         )}
       </div>

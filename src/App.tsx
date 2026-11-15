@@ -69,6 +69,16 @@ export default function App() {
     return { rawHex, correctedHex, usedHex, clipped: corr.clipped && basis === 'corrected', analysis: analyseColour(describeHex(usedHex)) };
   }, [current, settings, basis]);
 
+  const seasonChip = useMemo(() => {
+    if (!measured) return null;
+    const p = measured.analysis.primary;
+    const m = p.result.match;
+    if (/Strong|Good/.test(m)) return { text: `Soft Summer · ${m.replace(' match', '')}`, tone: 'ok' as const };
+    const best = measured.analysis.best.season.id === 'soft-summer' ? p.alternative.season.name : measured.analysis.best.season.name;
+    if (/Possible/.test(m)) return { text: `Soft Summer? Borderline · closer: ${best}`, tone: 'warn' as const };
+    return { text: `Not Soft Summer · ${best}`, tone: 'bad' as const };
+  }, [measured]);
+
   const copy = useCallback(async (hex: string) => {
     try { await navigator.clipboard.writeText(hex); say(`Copied ${hex}`); } catch { say(`HEX: ${hex}`); }
   }, [say]);
@@ -153,7 +163,7 @@ export default function App() {
       <main className="main">
         {tab === 'scan' && (
           <>
-            <CameraView camera={camera} onSample={onSample} size={size} onSize={(s) => { setSize(s); setSetting('size', s); }} previewHex={measured?.usedHex} />
+            <CameraView camera={camera} onSample={onSample} size={size} onSize={(s) => { setSize(s); setSetting('size', s); }} previewHex={measured?.usedHex} seasonChip={seasonChip} />
             {measured ? (
               <>
                 <ColourResult analysis={measured.analysis} rawHex={measured.rawHex} correctedHex={measured.correctedHex} basis={basis}
@@ -172,7 +182,7 @@ export default function App() {
         {tab === 'compare' && <ColourComparison samples={samples} compareIds={compareIds} onToggle={toggleCompare} onClear={() => setCompareIds([])} />}
         {tab === 'calibrate' && (
           <>
-            <CameraView camera={camera} onSample={onSample} size={size} onSize={setSize} compact previewHex={measured?.correctedHex} />
+            <CameraView camera={camera} onSample={onSample} size={size} onSize={setSize} compact previewHex={measured?.correctedHex} seasonChip={seasonChip} />
             <CalibrationPanel sampleSrgb={current?.srgb ?? null} profiles={profiles} activeId={activeId} onActivate={activate}
               onSaveProfile={persistProfile} onCreateProfile={createProfile} onDeleteProfile={removeProfile} draft={draft} setDraft={setDraft} />
           </>
