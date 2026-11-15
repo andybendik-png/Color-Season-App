@@ -19,6 +19,9 @@ Everything runs on the device. No account, no backend, no uploads. Works offline
 - **Brows**: classic brow mapping (start at the nose ala / inner corner, peak above the outer iris toward the eye corner, tail on the ala–outer-corner line). Shows guide lines, the suggested shape, trim (red) and fill (green) areas, a simulated "after" view, advice per brow in approximate mm (scaled from the iris), symmetry, face-shape adjustment and a pencil shade.
 - **Accounts (optional)**: Firebase email/password or Google sign-in. Two-way sync of colours, profiles and analyses (with photos). See `FIREBASE_SETUP.md`.
 
+## Handoff
+See **`HANDOFF.md`** for the verification checklist, Firebase steps and backend alternatives.
+
 ## Setup
 ```bash
 npm install
