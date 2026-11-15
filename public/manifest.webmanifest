@@ -1,0 +1,17 @@
+{
+  "name": "Soft Summer Scanner",
+  "short_name": "Soft Summer",
+  "description": "Live colour detection and Soft Summer palette matching. On-device, offline.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E9E6E3",
+  "theme_color": "#E9E6E3",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
