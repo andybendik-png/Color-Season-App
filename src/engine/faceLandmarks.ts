@@ -4,6 +4,7 @@
  * so after the first load it works offline and no image ever leaves the device for detection.
  */
 import type { Pt } from './brows';
+import { poseFromMatrix, type Pose } from './proportions';
 
 let landmarkerPromise: Promise<unknown> | null = null;
 
@@ -18,20 +19,21 @@ export async function loadLandmarker() {
       if (!head || !head.ok) throw new Error('Face model not available in this build. Place the points by hand.');
       return FaceLandmarker.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: modelUrl, delegate: 'CPU' },
-        runningMode: 'IMAGE', numFaces: 1, outputFaceBlendshapes: false,
+        runningMode: 'IMAGE', numFaces: 1, outputFaceBlendshapes: false, outputFacialTransformationMatrixes: true,
       });
     })();
     landmarkerPromise.catch(() => { landmarkerPromise = null; });
   }
-  return landmarkerPromise as Promise<{ detect: (img: HTMLCanvasElement) => { faceLandmarks: { x: number; y: number }[][] } }>;
+  return landmarkerPromise as Promise<{ detect: (img: HTMLCanvasElement) => { faceLandmarks: { x: number; y: number }[][]; facialTransformationMatrixes?: { data: ArrayLike<number> }[] } }>;
 }
 
-export async function detectLandmarks(canvas: HTMLCanvasElement): Promise<Pt[] | null> {
+export async function detectLandmarks(canvas: HTMLCanvasElement): Promise<{ points: Pt[]; pose: Pose | null } | null> {
   const lm = await loadLandmarker();
   const res = lm.detect(canvas);
   const face = res.faceLandmarks?.[0];
   if (!face || face.length < 478) return null;
-  return face.map((p) => ({ x: p.x * canvas.width, y: p.y * canvas.height }));
+  const m = res.facialTransformationMatrixes?.[0]?.data;
+  return { points: face.map((p) => ({ x: p.x * canvas.width, y: p.y * canvas.height })), pose: m && m.length >= 16 ? poseFromMatrix(m) : null };
 }
 
 export type PointKey = 'cheekL' | 'cheekR' | 'forehead' | 'chin' | 'hairTop' | 'hairSide' | 'eyeL' | 'eyeR' | 'browL' | 'browR' | 'white';

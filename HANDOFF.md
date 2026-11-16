@@ -76,6 +76,13 @@ Whichever you choose: face photos are biometric-adjacent personal data. Keep the
 - **⚠ Firestore rules fix, needs redeploying:** `request.resource.size()` is not valid on a resource. It is now `request.resource.data.size()`. If the old rules are what's deployed, every cloud write may be denied. Redeploy with `firebase deploy --only firestore:rules --project color-season-app`, then confirm one signed-in save shows up in the Firestore console.
 - Not tested on a real iPhone: front camera switching, and Safari's handling of `facingMode: 'user'`.
 
+## 4c. Changes 16 Nov 2026 (evening): Face tab, tab consolidation
+- **Tabs reduced from 7 to 5:** Scan (Camera/HEX/Calibrate), My colours, Face, Saved (Colours/Compare), Guide. A single photo session (`src/hooks/useFaceSession.ts`) is shared by My colours and Face.
+- **Face tab:** perceived thirds and fifths (`src/engine/proportions.ts`), style tips (`src/engine/faceStyling.ts`), draggable lines and brow handles, saved per-user options, and progress history.
+- **Data:** `SavedAnalysis` gained optional `pose`, `proportions` and `browOverrides` fields inside the existing `analyses` collection. No new Firestore collection.
+- **Tested** on one sample photo (tilted, turned head, smiling) and synthetic faces; 120 unit tests. **Not tested** on a real iPhone selfie or on a range of hair and skin colours. Hairline and beard detection use colour edges, so hair close in colour to the skin or blurred edges need manual dragging.
+- **Possible upgrade:** the MediaPipe multiclass selfie segmenter (hair / face-skin) for hairline and beard. Use the CPU delegate only; the GPU delegate scrambles categories on iOS Safari.
+
 ## 5. Known gaps / next steps
 1. Test everything in section 2 on a real iPhone.
 2. Add selfie-analysis photos to the JSON export (capture photos are already included, because they are stored inside the samples).

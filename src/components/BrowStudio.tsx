@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import type { BrowOverrides } from '../storage/analyses';
 import { analyseBrows, inside, outline, yAt, type BrowStyle, type Pt, type BrowAnalysis } from '../engine/brows';
 import { describeSrgb, labToXyz, xyzToLinearRgb, linearToSrgb, srgbToHex, labToLch, type Lab, type Vec3 } from '../engine/colourConversion';
 import type { PersonalAnalysis } from '../engine/faceAnalysis';
 
-interface Props { photo: HTMLCanvasElement; landmarks: Pt[] | null; style: BrowStyle; onStyle: (s: BrowStyle) => void; colours: PersonalAnalysis | null }
+interface Props {
+  photo: HTMLCanvasElement; landmarks: Pt[] | null; style: BrowStyle; onStyle: (s: BrowStyle) => void; colours: PersonalAnalysis | null;
+  overrides?: BrowOverrides; onOverrides?: (o: BrowOverrides) => void;
+  /** Brow start shift towards the nose in mm (+ for wide-set eyes, − for close-set). */
+  startShiftMm?: number; spacingLabel?: string | null;
+}
 type View = 'guides' | 'after' | 'before';
 
 interface Masks { trim: Uint8Array; fill: Uint8Array; hair: Uint8Array; x0: number; y0: number; w: number; h: number; trimMm2: number; fillMm2: number; skin: Vec3; brow: Vec3 }
@@ -79,20 +85,37 @@ function computeMasks(photo: HTMLCanvasElement, a: BrowAnalysis): Masks | null {
   return { trim, fill, hair: hairM, x0, y0, w, h, trimMm2: trimN * mm2, fillMm2: fillN * mm2, skin, brow };
 }
 
-export function BrowStudio({ photo, landmarks, style, onStyle, colours }: Props) {
+export function BrowStudio({ photo, landmarks, style, onStyle, colours, overrides = {}, onOverrides, startShiftMm = 0, spacingLabel = null }: Props) {
   const [view, setView] = useState<View>('guides');
   const out = useRef<HTMLCanvasElement>(null);
-  const analysis = useMemo(() => (landmarks ? analyseBrows(landmarks, style) : null), [landmarks, style]);
-  const masks = useMemo(() => (analysis ? computeMasks(photo, analysis) : null), [photo, analysis]);
+  const analysis = useMemo(() => (landmarks ? analyseBrows(landmarks, style, { overrides, startShiftMm }) : null), [landmarks, style, overrides, startShiftMm]);
+  // Crop is fixed from the landmark brow (not the adjustable guides) so it doesn't jump while dragging.
+  const crop = useMemo(() => {
+    if (!landmarks) return null;
+    const base = analyseBrows(landmarks, style);
+    const all = base.sides.flatMap((sd) => [...sd.ideal.upper, ...sd.current.upper, sd.iris.c].map((p) => base.frame.toImage(p)));
+    const pad = 16 / base.mmPerPx;
+    const cx0 = Math.max(0, Math.min(...all.map((p) => p.x)) - pad), cx1 = Math.min(photo.width, Math.max(...all.map((p) => p.x)) + pad);
+    const cy0 = Math.max(0, Math.min(...all.map((p) => p.y)) - pad), cy1 = Math.min(photo.height, Math.max(...all.map((p) => p.y)) + pad * 0.8);
+    const W = 900, k = W / (cx1 - cx0);
+    return { cx0, cy0, cx1, cy1, W, k, H: Math.round((cy1 - cy0) * k) };
+  }, [landmarks, style, photo]);
+  const deferred = useDeferredValue(analysis);
+  const wrap = useRef<HTMLDivElement>(null);
+  const [cssW, setCssW] = useState(1);
+  useEffect(() => {
+    const ro = new ResizeObserver(() => setCssW(wrap.current?.clientWidth ?? 1));
+    if (wrap.current) ro.observe(wrap.current);
+    return () => ro.disconnect();
+  }, [landmarks]);
+  const dragRef = useRef<{ side: 'A' | 'B'; key: 'startX' | 'peakX' | 'tailX' } | null>(null);
+  const masks = useMemo(() => (deferred ? computeMasks(photo, deferred) : null), [photo, deferred]);
 
   useEffect(() => {
     if (!analysis || !out.current) return;
     // crop: both brows + eyes, with margins
-    const all = analysis.sides.flatMap((s) => [...s.ideal.upper, ...s.current.upper, s.iris.c].map((p) => analysis.frame.toImage(p)));
-    const pad = 14 / analysis.mmPerPx;
-    const cx0 = Math.max(0, Math.min(...all.map((p) => p.x)) - pad), cx1 = Math.min(photo.width, Math.max(...all.map((p) => p.x)) + pad);
-    const cy0 = Math.max(0, Math.min(...all.map((p) => p.y)) - pad), cy1 = Math.min(photo.height, Math.max(...all.map((p) => p.y)) + pad * 0.8);
-    const W = 900, k = W / (cx1 - cx0), H = Math.round((cy1 - cy0) * k);
+    if (!crop) return;
+    const { cx0, cy0, cx1, cy1, W, k, H } = crop;
     const c = out.current; c.width = W; c.height = H;
     const ctx = c.getContext('2d')!;
     // compose the working image (before/after) at photo resolution
@@ -155,7 +178,7 @@ export function BrowStudio({ photo, landmarks, style, onStyle, colours }: Props)
         ctx.fillText(label, q.x - 18, q.y - 12); ctx.shadowBlur = 0;
       }
     }
-  }, [analysis, masks, view, photo]);
+  }, [analysis, masks, view, photo, crop]);
 
   if (!landmarks) return (
     <div className="card"><h3 className="card__title">Brows</h3>
@@ -185,7 +208,30 @@ export function BrowStudio({ photo, landmarks, style, onStyle, colours }: Props)
             <button key={k} className={`seg__btn ${style === k ? 'is-on' : ''}`} onClick={() => onStyle(k)}>{l}</button>
           ))}
         </div>
-        <canvas ref={out} className="brows__canvas" />
+        <div className="brows__wrap" ref={wrap}
+          onPointerMove={(e) => {
+            const d = dragRef.current; if (!d || !crop || !analysis || !onOverrides) return;
+            const rect = wrap.current!.getBoundingClientRect();
+            const sc = cssW / crop.W;
+            const img = { x: (e.clientX - rect.left) / sc / crop.k + crop.cx0, y: (e.clientY - rect.top) / sc / crop.k + crop.cy0 };
+            const lx = analysis.frame.toLocal(img).x;
+            onOverrides({ ...overrides, [d.side]: { ...(overrides[d.side] ?? {}), [d.key]: lx } });
+          }}
+          onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }}>
+          <canvas ref={out} className="brows__canvas" />
+          {view === 'guides' && onOverrides && crop && analysis && analysis.sides.flatMap((sd) => ([['startX', sd.ideal.start], ['peakX', sd.ideal.peak], ['tailX', sd.ideal.tail]] as const).map(([key, p]) => {
+            const q = analysis.frame.toImage(p);
+            const sc = cssW / crop.W;
+            return (
+              <div key={sd.side + key} className="bhandle" style={{ left: (q.x - crop.cx0) * crop.k * sc, top: (q.y - crop.cy0) * crop.k * sc }}
+                onPointerDown={(e) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture(e.pointerId); dragRef.current = { side: sd.side, key }; }}
+                role="slider" aria-label={`Move ${key === 'startX' ? 'start' : key === 'peakX' ? 'peak' : 'tail'} of the brow on the ${sd.side === 'A' ? 'left' : 'right'} of the photo`} aria-valuenow={Math.round(p.x)} tabIndex={0} />
+            );
+          }))}
+        </div>
+        {onOverrides && Object.keys(overrides).length > 0 && <button className="linkbtn" onClick={() => onOverrides({})}>Reset brow guides</button>}
+        {onOverrides && view === 'guides' && <p className="small muted">Drag the round handles sideways to move each brow's start, peak or tail. The suggested shape and the trim/fill areas update.</p>}
+        {spacingLabel && spacingLabel !== 'Balanced' && <p className="small">Your eyes read <strong>{spacingLabel.toLowerCase()}</strong>, so the suggested start has been moved 1 mm {spacingLabel === 'Wide-set' ? 'towards the nose' : 'outwards'} to balance the middle fifth.</p>}
         <div className="seg seg--small" role="group" aria-label="View">
           {([['guides', 'Map'], ['after', 'After (simulated)'], ['before', 'Before']] as [View, string][]).map(([k, l]) => (
             <button key={k} className={`seg__btn ${view === k ? 'is-on' : ''}`} onClick={() => setView(k)}>{l}</button>

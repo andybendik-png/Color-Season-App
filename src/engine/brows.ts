@@ -110,7 +110,14 @@ const SHAPE_ARCH: Record<FaceShape, number> = { Oval: 1, Round: 1.25, Long: 0.65
 const PEAK_TOWARD_CANTHUS: Record<BrowStyle, number> = { soft: 0.35, defined: 0.45, straight: 0.5 };
 const TAIL_THICKNESS: Record<BrowStyle, number> = { soft: 0.4, defined: 0.33, straight: 0.6 };
 
-export function analyseBrows(lm: Pt[], style: BrowStyle = 'soft'): BrowAnalysis {
+export interface BrowOptions {
+  /** Manually dragged guide positions (local x), per side ('A' = left of the photo). */
+  overrides?: Partial<Record<'A' | 'B', { startX?: number; peakX?: number; tailX?: number }>>;
+  /** Shift of the brow start towards the nose (+) or away (−), in mm. Used for wide/close-set eyes. */
+  startShiftMm?: number;
+}
+
+export function analyseBrows(lm: Pt[], style: BrowStyle = 'soft', opts: BrowOptions = {}): BrowAnalysis {
   if (lm.length < 478) throw new Error('Iris landmarks missing (need 478 points)');
   const irisA = { c: lm[LM.irisA[0]], r: LM.irisA.slice(1).reduce((s, i) => s + dist(lm[i], lm[LM.irisA[0]]), 0) / 4 };
   const irisB = { c: lm[LM.irisB[0]], r: LM.irisB.slice(1).reduce((s, i) => s + dist(lm[i], lm[LM.irisB[0]]), 0) / 4 };
@@ -142,9 +149,11 @@ export function analyseBrows(lm: Pt[], style: BrowStyle = 'soft'): BrowAnalysis 
     const headThick = Math.max(4, Math.abs(lower[0].y - upper[0].y));
 
     // ideal key x positions
-    const startX = (A.x + I.x) / 2;
+    const sideKey: 'A' | 'B' = ic.x < 0 ? 'A' : 'B';
+    const ov = opts.overrides?.[sideKey] ?? {};
+    const startX = ov.startX ?? (A.x + I.x) / 2 - outward * (opts.startShiftMm ?? 0) / mmPerPx;
     const limbusX = ic.x + outward * iris.r;
-    const peakX = limbusX + PEAK_TOWARD_CANTHUS[style] * (O.x - limbusX);
+    const peakX = ov.peakX ?? limbusX + PEAK_TOWARD_CANTHUS[style] * (O.x - limbusX);
     // tail: line from ala through outer canthus, evaluated at brow height
     const headLowerY = yAt(lower, startX) ?? lower[0].y;
     const dirX = O.x - A.x, dirY = O.y - A.y;
@@ -152,6 +161,7 @@ export function analyseBrows(lm: Pt[], style: BrowStyle = 'soft'): BrowAnalysis 
     let tailX = A.x + dirX * tLine;
     // optional: stop 0–2 mm short for a lifted look
     tailX -= outward * (style === 'defined' ? 2 : 0) / mmPerPx;
+    if (ov.tailX !== undefined) tailX = ov.tailX;
 
     // Target arch profile for the LOWER edge, anchored at the current head. Real shaping can only
     // lift the lower edge by trimming beneath it (max ~2.5 mm) or fill a little below (max ~1 mm),

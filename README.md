@@ -4,6 +4,16 @@ A mobile-first PWA for iPhone. Point the rear camera at a garment, fabric, paint
 
 Colour analysis and face detection run on the device, and the live camera feed is never uploaded. Accounts are optional (Firebase). When you're signed in, saved colours, their capture photos, profiles and selfie analyses sync privately to your account. Works offline after the first load.
 
+## Tabs
+Five tabs, following iOS guidance (3–5). Related tools are segments inside a tab.
+- **Scan:** Camera / HEX code / Calibrate.
+- **My colours:** colour season from a photo, plus the drape test.
+- **Face:** proportions (thirds and fifths), brows, and progress over time.
+- **Saved:** Colours / Compare.
+- **Guide.**
+
+The Colour and Face tabs share one photo.
+
 ## Features
 - **Live scan**: rear camera or selfie (front) camera with a Rear/Selfie switch, a central sampling circle (Small / Medium / Large), about 8 robust samples per second, and a live stability indicator (Stable / Moderate variation / Unstable).
 - **Freeze + colour picker**: freeze the frame, then tap anywhere on it to sample that point.
@@ -83,6 +93,18 @@ The raw and corrected values are always kept separately and saved with each samp
 | Palettes | ≥ 50 per season, profile coherence, warm-vs-cool ordering | pass |
 | Camera pipeline (end-to-end) | Headless Chrome with a synthetic camera feed of #6D7F98 (YUV 4:2:0) | sampled **#6D7F99** |
 | Camera vs real objects | **Not validated.** Passing maths tests does not make camera readings accurate. | — |
+
+## Face proportions (Face tab)
+- **One photo,** with hair and beard as usually worn, so the analysis is of the *perceived* face. A hair-back photo is optional.
+- **Thirds:** hairline as seen → brows (glabella) → nose base (subnasale) → chin as seen. A fringe shortens the upper third and a beard lengthens the lower third.
+- **Fifths at eye level:** visible face edge, eye, inner-eye gap, eye, visible face edge. The face mesh has no ears, so the outer two are "visible width".
+- **Automatic lines with manual adjustment:** the lines come from MediaPipe landmarks plus colour-edge detection, which finds the first strong colour edge and places the line where it starts. Every line can be dragged.
+- **Photo warnings:** head pitch and yaw (from the face transformation matrix), an open mouth or smile, and an estimated hairline. Scale is taken from the iris (≈ 11.7 mm).
+- **Wide tolerances and no attractiveness score:** studies show most attractive faces don't meet the canons.
+- **Tips** (`src/engine/faceStyling.ts`) are filtered by saved options: who the advice is for, hair length, hairline, facial hair, and glasses. Each tip states what it balances and whether it is research-backed or a stylist/optician convention. Tips marked ▣ can be previewed on the photo.
+- **Brows:** start, peak and tail handles can be dragged, and eye spacing from the fifths moves the suggested brow start by 1 mm.
+- **Progress:** every saved analysis stores thirds, eye spacing and length-to-width ratio.
+- Research notes with sources are in the Claude project doc `research-facial-proportions.md`.
 
 ## Selfie analysis: method and honesty
 - Research notes, with sources, are in the project doc `research-selfie-season-and-brows.md`.

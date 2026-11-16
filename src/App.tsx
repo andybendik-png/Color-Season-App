@@ -10,6 +10,9 @@ import { ColourComparison } from './components/ColourComparison';
 import { HexAnalyser } from './components/HexAnalyser';
 import { InfoPanel } from './components/InfoPanel';
 import { SelfieStudio } from './components/SelfieStudio';
+import { FaceStudio } from './components/FaceStudio';
+import { useFaceSession } from './hooks/useFaceSession';
+import { DEFAULT_PROFILE, type FaceProfile } from './engine/faceStyling';
 import { AccountPanel } from './components/AccountPanel';
 import { cloudConfigured, pushAnalysis, pushProfile, pushSample, removeAnalysis, removeProfile as removeCloudProfile, removeSample, watchUser, type CloudUser } from './cloud/cloud';
 import { syncAll } from './cloud/sync';
@@ -21,15 +24,21 @@ import { deleteProfile, listProfiles, newProfile, saveProfile, type CalibrationP
 import { deleteSample, exportAll, importAll, listSamples, putSample, type ItemCategory, type SavedSample } from './storage/colourHistory';
 import { getSetting, setSetting, uid } from './storage/database';
 
-type Tab = 'scan' | 'selfie' | 'hex' | 'saved' | 'compare' | 'calibrate' | 'info';
+// Five tabs (iOS guidance: 3–5). Related tools live as segments inside a tab.
+type Tab = 'scan' | 'colour' | 'face' | 'saved' | 'info';
+type ScanMode = 'camera' | 'hex' | 'calibrate';
+type SavedMode = 'colours' | 'compare';
 const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'scan', label: 'Scan', icon: '◎' }, { id: 'selfie', label: 'Me', icon: '☺' }, { id: 'hex', label: 'HEX', icon: '#' }, { id: 'saved', label: 'Saved', icon: '▦' },
-  { id: 'compare', label: 'Compare', icon: '⇄' }, { id: 'calibrate', label: 'Calibrate', icon: '≈' }, { id: 'info', label: 'Guide', icon: 'i' },
+  { id: 'scan', label: 'Scan', icon: '◎' }, { id: 'colour', label: 'My colours', icon: '◐' }, { id: 'face', label: 'Face', icon: '☺' },
+  { id: 'saved', label: 'Saved', icon: '▦' }, { id: 'info', label: 'Guide', icon: 'i' },
 ];
 
 export default function App() {
   const camera = useCamera();
   const [tab, setTab] = useState<Tab>('scan');
+  const [scanMode, setScanMode] = useState<ScanMode>('camera');
+  const [savedMode, setSavedMode] = useState<SavedMode>('colours');
+  const [faceProfile, setFaceProfile] = useState<FaceProfile>(DEFAULT_PROFILE);
   const [size, setSize] = useState<SizeKey>('M');
   const [current, setCurrent] = useState<CurrentSample | null>(null);
   const [basis, setBasis] = useState<'corrected' | 'raw'>('corrected');
@@ -65,9 +74,16 @@ export default function App() {
         setBasis(await getSetting('basis', 'corrected'));
         setSize(await getSetting('size', 'M'));
         setLastCategory(await getSetting<ItemCategory | null>('lastCategory', null));
+        setFaceProfile({ ...DEFAULT_PROFILE, ...(await getSetting<Partial<FaceProfile>>('faceProfile', {})) });
       } catch { setStorageOk(false); }
     })();
   }, []);
+
+  const persistAnalysis = useCallback(async (a: SavedAnalysis) => {
+    await putAnalysis(a); setAnalyses((x) => [a, ...x.filter((y) => y.id !== a.id)]); cloud(() => pushAnalysis(a));
+  }, [cloud]);
+  const face = useFaceSession(faceProfile, analyses, persistAnalysis);
+  const dropAnalysis = async (id: string) => { await deleteAnalysis(id); setAnalyses((x) => x.filter((y) => y.id !== id)); cloud(() => removeAnalysis(id)); };
 
   const doSync = useCallback(async () => {
     setSyncing(true);
@@ -90,7 +106,8 @@ export default function App() {
 
   const active = profiles.find((p) => p.id === activeId) ?? null;
   // On the Calibrate tab the draft is previewed; elsewhere the saved active profile applies.
-  const settings = tab === 'calibrate' ? draft : active?.settings ?? IDENTITY_CORRECTION;
+  const calibrating = tab === 'scan' && scanMode === 'calibrate';
+  const settings = calibrating ? draft : active?.settings ?? IDENTITY_CORRECTION;
 
   const onSample = useCallback((s: CurrentSample) => {
     setCurrent((prev) => (prev && prev.source === s.source && srgbToHex(prev.srgb) === srgbToHex(s.srgb) && prev.stability === s.stability ? prev : s));
@@ -201,7 +218,7 @@ export default function App() {
   };
 
   const goTab = (t: Tab) => { setTab(t); window.scrollTo({ top: 0 }); };
-  const openHex = (hex: string) => { setHexSeed(hex); goTab('hex'); };
+  const openHex = (hex: string) => { setHexSeed(hex); setScanMode('hex'); goTab('scan'); };
   const openSample = (s: SavedSample) => openHex(s.hex);
 
   return (
@@ -209,7 +226,7 @@ export default function App() {
       <header className="appbar">
         <h1 className="appbar__title">Soft Summer <span>Scanner</span></h1>
         <div className="appbar__right">
-          {active && tab !== 'calibrate' && <span className="appbar__profile" title="Active calibration profile">{active.name}</span>}
+          {active && !calibrating && <span className="appbar__profile" title="Active calibration profile">{active.name}</span>}
           {cloudConfigured() && <button className="appbar__acct" onClick={() => setAccountOpen(true)} aria-label="Account">{user ? (user.email?.[0] ?? '•').toUpperCase() : 'Sign in'}</button>}
           {!cloudConfigured() && <button className="appbar__acct appbar__acct--off" onClick={() => setAccountOpen(true)} aria-label="Account">Account</button>}
         </div>
@@ -218,6 +235,13 @@ export default function App() {
 
       <main className="main">
         {tab === 'scan' && (
+          <div className="seg seg--top" role="group" aria-label="Scan mode">
+            <button className={`seg__btn ${scanMode === 'camera' ? 'is-on' : ''}`} onClick={() => setScanMode('camera')}>Camera</button>
+            <button className={`seg__btn ${scanMode === 'hex' ? 'is-on' : ''}`} onClick={() => setScanMode('hex')}>HEX code</button>
+            <button className={`seg__btn ${scanMode === 'calibrate' ? 'is-on' : ''}`} onClick={() => setScanMode('calibrate')}>Calibrate</button>
+          </div>
+        )}
+        {tab === 'scan' && scanMode === 'camera' && (
           <>
             <CameraView camera={camera} onSample={onSample} size={size} onSize={(s) => { setSize(s); setSetting('size', s); }} previewHex={measured?.usedHex} seasonChip={seasonChip} captureRef={captureRef} onCapture={saveCurrent} captureDisabled={!measured} />
             {measured ? (
@@ -230,18 +254,22 @@ export default function App() {
             ) : camera.state === 'live' ? <p className="small muted center">Reading colour…</p> : null}
           </>
         )}
-        {tab === 'selfie' && (
-          <SelfieStudio saved={analyses} signedIn={!!user}
-            onSave={async (a) => { await putAnalysis(a); setAnalyses((x) => [a, ...x.filter((y) => y.id !== a.id)]); say('Analysis saved'); cloud(() => pushAnalysis(a)); }}
-            onDelete={async (id) => { await deleteAnalysis(id); setAnalyses((x) => x.filter((y) => y.id !== id)); cloud(() => removeAnalysis(id)); }} />
-        )}
-        {tab === 'hex' && <HexAnalyser key={hexSeed} initial={hexSeed} onCopy={copy} onSave={(hex) => openSaveSheet(hex, hex, 'raw', 'manual', undefined, null, null)} />}
+        {tab === 'colour' && <SelfieStudio session={face} saved={analyses} signedIn={!!user} onDelete={dropAnalysis} onSaved={() => say('Analysis saved')} />}
+        {tab === 'face' && <FaceStudio session={face} saved={analyses} signedIn={!!user} onDelete={dropAnalysis} onSaved={() => say('Analysis saved')}
+          profile={faceProfile} onProfile={(p) => { setFaceProfile(p); setSetting('faceProfile', p); }} />}
+        {tab === 'scan' && scanMode === 'hex' && <HexAnalyser key={hexSeed} initial={hexSeed} onCopy={copy} onSave={(hex) => openSaveSheet(hex, hex, 'raw', 'manual', undefined, null, null)} />}
         {tab === 'saved' && (
+          <div className="seg seg--top" role="group" aria-label="Saved view">
+            <button className={`seg__btn ${savedMode === 'colours' ? 'is-on' : ''}`} onClick={() => setSavedMode('colours')}>Colours</button>
+            <button className={`seg__btn ${savedMode === 'compare' ? 'is-on' : ''}`} onClick={() => setSavedMode('compare')}>Compare{compareIds.length ? ` (${compareIds.length})` : ''}</button>
+          </div>
+        )}
+        {tab === 'saved' && savedMode === 'colours' && (
           <ColourHistory samples={samples} compareIds={compareIds} onToggleCompare={toggleCompare} onUpdate={updateSample} onDelete={dropSample}
             onCopy={copy} onOpen={openSample} onExport={doExport} onImport={doImport} />
         )}
-        {tab === 'compare' && <ColourComparison samples={samples} compareIds={compareIds} onToggle={toggleCompare} onClear={() => setCompareIds([])} />}
-        {tab === 'calibrate' && (
+        {tab === 'saved' && savedMode === 'compare' && <ColourComparison samples={samples} compareIds={compareIds} onToggle={toggleCompare} onClear={() => setCompareIds([])} />}
+        {tab === 'scan' && scanMode === 'calibrate' && (
           <>
             <CameraView camera={camera} onSample={onSample} size={size} onSize={setSize} compact previewHex={measured?.correctedHex} seasonChip={seasonChip} />
             <CalibrationPanel sampleSrgb={current?.srgb ?? null} profiles={profiles} activeId={activeId} onActivate={activate}
@@ -269,7 +297,7 @@ export default function App() {
           <button key={t.id} className={`tabbar__btn ${tab === t.id ? 'is-on' : ''}`} onClick={() => goTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}>
             <span className="tabbar__icon" aria-hidden>{t.icon}</span>
             <span>{t.label}</span>
-            {t.id === 'compare' && compareIds.length > 0 && <span className="tabbar__badge">{compareIds.length}</span>}
+            {t.id === 'saved' && compareIds.length > 0 && <span className="tabbar__badge">{compareIds.length}</span>}
           </button>
         ))}
       </nav>
