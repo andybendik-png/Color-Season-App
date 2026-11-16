@@ -80,7 +80,8 @@ Whichever you choose: face photos are biometric-adjacent personal data. Keep the
 - **Tabs reduced from 7 to 5:** Scan (Camera/HEX/Calibrate), My colours, Face, Saved (Colours/Compare), Guide. A single photo session (`src/hooks/useFaceSession.ts`) is shared by My colours and Face.
 - **Face tab:** perceived thirds and fifths (`src/engine/proportions.ts`), style tips (`src/engine/faceStyling.ts`), draggable lines and brow handles, saved per-user options, and progress history.
 - **Data:** `SavedAnalysis` gained optional `pose`, `proportions` and `browOverrides` fields inside the existing `analyses` collection. No new Firestore collection.
-- **Tested** on one sample photo (tilted, turned head, smiling) and synthetic faces; 120 unit tests. **Not tested** on a real iPhone selfie or on a range of hair and skin colours. Hairline and beard detection use colour edges, so hair close in colour to the skin or blurred edges need manual dragging.
+- **Tested** on one real photo (woman, hair back, tilted, turned head, smiling), a fringe and a beard painted into that photo, synthetic faces (including a low fringe and a grey beard), and 6 sample photos for eye spacing. 123 unit tests pass.
+- **Eye-spacing threshold:** the gap-to-eye ratio ran 1.17–1.38 across the sample photos, because the mesh's eye corners sit inside the true corners and real gaps are usually wider than the canon. "Balanced" is therefore centred on 1.22; wide-set means > 1.45 and close-set < 0.98. **Not tested** on a real iPhone selfie or on a range of hair and skin colours. Hairline and beard detection use colour edges, so hair close in colour to the skin or blurred edges need manual dragging.
 - **Possible upgrade:** the MediaPipe multiclass selfie segmenter (hair / face-skin) for hairline and beard. Use the CPU delegate only; the GPU delegate scrambles categories on iOS Safari.
 
 ## 5. Known gaps / next steps

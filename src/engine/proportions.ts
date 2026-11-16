@@ -104,17 +104,30 @@ export function detectEdges(lm: Pt[], px: PixelFn): Detected {
   const out: Detected = { hairlineFound: false, beardFound: false, edgesFound: false };
 
   const k = Math.max(3, Math.round(ipd * 0.12)); // ≈ 7 mm: wide enough to catch soft, blurry hairlines
-  // Hairline (as seen): first strong colour edge going up the midline from landmark 10.
-  const top = f.toLocal(lm[LM_P.top]);
-  const hl = firstEdge(px, f, lm[LM_P.top], { x: 0, y: -1 }, ipd * 3, k, 10, r);
-  if (hl && f.toLocal(hl).y < top.y) { out.hairline = hl; out.hairlineFound = true; }
+  // Skin reference from the upper cheeks (landmarks 50/280): below the eyes, above any beard.
+  const cheeks = [patch(px, lm[50], r * 3), patch(px, lm[280], r * 3)].filter(Boolean) as number[][];
+  const skinRef = cheeks.length ? [0, 1, 2].map((i) => cheeks.reduce((a, c) => a + c[i], 0) / cheeks.length) : null;
+  const g = f.toLocal(lm[LM_P.glabella]);
 
-  // Chin (as seen): if the chin is covered by darker, beard-like colour, the first edge below it.
-  const cheekRef = patch(px, lm[205] ?? lm[LM_P.menton], r * 3);
+  // Hairline (as seen): search upward from just above the brows, so a low fringe is found
+  // (starting higher would begin inside the fringe and run up to the crown).
+  const startHl = f.toImage({ x: g.x, y: g.y - ipd * 0.2 });
+  const startCol = patch(px, startHl, r * 2);
+  if (startCol && skinRef && dE(startCol, skinRef) > 20) {
+    // Hair already covers the forehead just above the brows: the fringe reaches the brows.
+    out.hairline = startHl; out.hairlineFound = true;
+  } else {
+    const hl = firstEdge(px, f, startHl, { x: 0, y: -1 }, ipd * 3, k, 10, r);
+    if (hl) { out.hairline = hl; out.hairlineFound = true; }
+  }
+
+  // Chin (as seen): sample the lower chin (between lower lip and menton). If it differs clearly
+  // from the cheek skin (any beard colour: dark, grey or blond), follow the beard down to its edge.
   const m = f.toLocal(lm[LM_P.menton]);
-  const at = patch(px, lm[LM_P.menton], r * 2);
-  if (cheekRef && at && dE(at, cheekRef) > 16 && at[0] < cheekRef[0] - 6) {
-    const end = firstEdge(px, f, lm[LM_P.menton], { x: 0, y: 1 }, ipd * 1.2, k, 10, r);
+  const lowerLip = f.toLocal(lm[17] ?? lm[LM_P.stomionL]);
+  const chinPatch = patch(px, f.toImage({ x: m.x, y: lowerLip.y + (m.y - lowerLip.y) * 0.6 }), r * 2);
+  if (skinRef && chinPatch && dE(chinPatch, skinRef) > 16) {
+    const end = firstEdge(px, f, lm[LM_P.menton], { x: 0, y: 1 }, ipd * 1.5, k, 10, r);
     if (end && f.toLocal(end).y - m.y > r * 3) { out.chin = end; out.beardFound = true; }
   }
 
@@ -172,6 +185,7 @@ export interface ProportionResult {
   noseToGap: number;
   lengthToWidth: number;
   visibleWidthMm: number;
+  meshWidthMm: number; // face outline width at the temples from the mesh (not affected by hair)
   faceLengthMm: number;
   shape: 'Long' | 'Balanced' | 'Short / wide';
   pose: Pose | null;
@@ -189,7 +203,7 @@ export function analyseProportions(lm: Pt[], lines: Record<LineKey, Pt>, pose: P
   const total = up + mid + low;
   const mk = (key: 'upper' | 'middle' | 'lower', label: string, mm: number) => {
     const share = mm / total, dev = (share - 1 / 3) / (1 / 3);
-    return { key, label, mm, share, dev, level: level(Math.abs(dev), 0.1, 0.18) };
+    return { key, label, mm, share, dev, level: level(Math.abs(dev), 0.12, 0.2) };
   };
   const thirds = [mk('upper', 'Upper (hairline → brows)', up), mk('middle', 'Middle (brows → nose base)', mid), mk('lower', 'Lower (nose base → chin)', low)];
   const lipShare = ((y('stomion') - y('subnasale')) * mmPerPx) / low;
@@ -203,18 +217,21 @@ export function analyseProportions(lm: Pt[], lines: Record<LineKey, Pt>, pose: P
     { key: 'eyeR', label: 'Eye (right)', mm: seg[3] },
     { key: 'outerR', label: 'Visible side (right)', mm: seg[4] },
   ].map((s) => ({ ...s, ratioToEye: s.mm / eyeW }));
+  // Eye spacing. The canon says gap = eye width (1.0), but studies find the gap is usually wider,
+  // and the mesh's eye-corner points sit slightly inside the true corners. Across sample photos
+  // this measure ran 1.17–1.38, so "balanced" is centred on 1.22 rather than the canon's 1.0.
   const spacingRatio = seg[2] / eyeW;
   const spacing = {
     ratio: spacingRatio,
-    label: (spacingRatio > 1.22 ? 'Wide-set' : spacingRatio < 0.88 ? 'Close-set' : 'Balanced') as 'Close-set' | 'Balanced' | 'Wide-set',
-    level: level(Math.abs(spacingRatio - 1.05), 0.17, 0.3),
+    label: (spacingRatio > 1.45 ? 'Wide-set' : spacingRatio < 0.98 ? 'Close-set' : 'Balanced') as 'Close-set' | 'Balanced' | 'Wide-set',
+    level: level(Math.abs(spacingRatio - 1.22), 0.2, 0.32),
   };
   const ala = Math.abs(f.toLocal(lm[LM_P.alaA]).x - f.toLocal(lm[LM_P.alaB]).x) * mmPerPx;
   const visibleWidth = xs[5] - xs[0];
   const lengthToWidth = total / visibleWidth;
   const warnings: string[] = [];
   if (pose) {
-    if (Math.abs(pose.pitch) > 8) warnings.push(`Head is tilted ${pose.pitch > 0 ? 'down' : 'up'} about ${Math.abs(pose.pitch).toFixed(0)}°. This changes all three thirds; keep the camera at eye level.`);
+    if (Math.abs(pose.pitch) > 8) warnings.push(`Head is tilted up or down by about ${Math.abs(pose.pitch).toFixed(0)}°. This changes all three thirds; keep the camera at eye level and the chin level.`);
     if (Math.abs(pose.yaw) > 8) warnings.push(`Head is turned about ${Math.abs(pose.yaw).toFixed(0)}° to one side. Fifths are unreliable; face the camera straight on.`);
   }
   if (extra.mouthOpen) warnings.push('Mouth looks open or smiling. That lengthens the lower third; use a neutral expression with lips together.');
@@ -222,6 +239,7 @@ export function analyseProportions(lm: Pt[], lines: Record<LineKey, Pt>, pose: P
   return {
     frame: f, mmPerPx, thirds, lowerSplit: { upperLipShare: lipShare, level: level(Math.abs(lipShare - 1 / 3) / (1 / 3), 0.2, 0.35) },
     fifths, eyeWidthMm: eyeW, spacing, noseToGap: ala / seg[2], lengthToWidth, visibleWidthMm: visibleWidth, faceLengthMm: total,
+    meshWidthMm: Math.abs(f.toLocal(lm[LM_P.contourA]).x - f.toLocal(lm[LM_P.contourB]).x) * mmPerPx,
     shape: lengthToWidth > 1.55 ? 'Long' : lengthToWidth < 1.3 ? 'Short / wide' : 'Balanced', pose, warnings,
   };
 }

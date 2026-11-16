@@ -41,7 +41,7 @@ export function styleTips(r: ProportionResult, p: FaceProfile): Tip[] {
   const avg = (a: number, b: number) => (a + b) / 2;
 
   // ---------- Upper third ----------
-  if (up.dev > 0.1) {
+  if (up.level !== 'Balanced' && up.dev > 0) {
     const excess = up.mm - avg(mid.mm, low.mm);
     if (p.hairLength === 'shaved' || p.hairLength === 'short') {
       tips.push({ area: 'Hair', title: p.hairline === 'full' ? 'Wear the front forward' : 'Short textured crop with a forward fringe',
@@ -60,7 +60,7 @@ export function styleTips(r: ProportionResult, p: FaceProfile): Tip[] {
     tips.push({ area: 'Brows', title: 'Keep brows full rather than thin',
       detail: 'Fuller, defined brows give the upper face a clear frame so the forehead area looks smaller. Avoid over-plucking the top edge.',
       balances: 'Long upper third', evidence: 'Stylist convention', priority: 3 });
-  } else if (up.dev < -0.1) {
+  } else if (up.level !== 'Balanced' && up.dev < 0) {
     tips.push({ area: 'Hair', title: 'Show your forehead and add lift',
       detail: p.hairLength === 'shaved' ? 'Keep the front short and clean so the full forehead shows.'
         : 'Wear the front up or back (light quiff, brushed back or side part) instead of a heavy fringe. Lift at the front makes the upper face read longer.',
@@ -68,21 +68,21 @@ export function styleTips(r: ProportionResult, p: FaceProfile): Tip[] {
   }
 
   // ---------- Middle third ----------
-  if (mid.dev > 0.1) {
+  if (mid.level !== 'Balanced' && mid.dev > 0) {
     if (p.glasses !== 'no') tips.push({ area: 'Glasses', title: 'A frame with a lower or darker bridge',
       detail: 'A bridge that sits lower on the nose, or a thicker/darker bridge, adds a horizontal line across the middle third and makes the nose read shorter. Clear, high bridges do the opposite.',
       balances: 'Long middle third', evidence: 'Optician convention', priority: 6 });
     if (canGrowBeard(p)) tips.push({ area: 'Facial hair', title: 'Keep a moustache',
       detail: 'A neat moustache adds a horizontal line directly under the nose, which visually ends the middle third and shortens it.',
       balances: 'Long middle third', evidence: 'Stylist convention', priority: 5 });
-  } else if (mid.dev < -0.12) {
+  } else if (mid.level !== 'Balanced' && mid.dev < 0) {
     if (p.glasses !== 'no') tips.push({ area: 'Glasses', title: 'A high or clear (keyhole) bridge',
       detail: 'A higher-set or transparent bridge leaves the nose uninterrupted, so the middle third reads longer.',
       balances: 'Short middle third', evidence: 'Optician convention', priority: 4 });
   }
 
   // ---------- Lower third ----------
-  if (low.dev < -0.1) {
+  if (low.level !== 'Balanced' && low.dev < 0) {
     const short = avg(up.mm, mid.mm) - low.mm;
     if (canGrowBeard(p)) {
       tips.push({ area: 'Facial hair', title: hasBeard(p) ? 'Keep the beard longer at the chin than at the sides' : 'Grow a short beard with length at the chin',
@@ -92,7 +92,7 @@ export function styleTips(r: ProportionResult, p: FaceProfile): Tip[] {
     if (p.hairLength === 'long' || p.hairLength === 'medium') tips.push({ area: 'Hair', title: 'Avoid hair ending exactly at the chin',
       detail: 'A cut that ends at the chin draws a line there and makes the lower face look shorter. Ending at the collarbone or above the jaw works better.',
       balances: 'Short lower third', evidence: 'Stylist convention', priority: 5 });
-  } else if (low.dev > 0.1) {
+  } else if (low.level !== 'Balanced' && low.dev > 0) {
     const excess = low.mm - avg(up.mm, mid.mm);
     if (hasBeard(p) || p.facialHair === 'stubble') {
       tips.push({ area: 'Facial hair', title: 'Keep the chin short and the sides fuller',
@@ -140,9 +140,9 @@ export function styleTips(r: ProportionResult, p: FaceProfile): Tip[] {
 
   // ---------- Glasses width (always useful when relevant) ----------
   if (p.glasses !== 'no') {
-    const w = Math.round(r.visibleWidthMm / 2) * 2;
+    const w = Math.round(r.meshWidthMm / 2) * 2; // face outline, so hair over the temples doesn't shrink it
     tips.push({ area: 'Glasses', title: `Total frame width about ${w - 4}–${w + 4} mm`,
-      detail: `Your visible face width at eye level is about ${Math.round(r.visibleWidthMm)} mm. Frames should match the widest part of the face or sit slightly wider, and the top edge should follow your brows. Check the total width on the product page (lens + bridge + lens + rims), or ask the optician.`,
+      detail: `Your face is about ${Math.round(r.meshWidthMm)} mm wide at the temples. Frames should match the widest part of the face or sit slightly wider, and the top edge should follow your brows. Check the total width on the product page (lens + bridge + lens + rims), or ask the optician.`,
       balances: 'Face width (fifths)', evidence: 'Optician convention', priority: 2 });
   }
 

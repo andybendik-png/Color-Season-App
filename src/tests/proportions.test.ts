@@ -15,17 +15,20 @@ function face(): Pt[] {
   set(LM_P.glabella, 300, 280); set(LM_P.top, 300, 200); set(LM_P.subnasale, 300, 380);
   set(LM_P.stomionU, 300, 412); set(LM_P.stomionL, 300, 413); set(LM_P.menton, 300, 480);
   set(LM_P.alaA, 285, 375); set(LM_P.alaB, 315, 375); set(205, 270, 400);
+  set(50, 255, 340); set(280, 345, 340); set(17, 300, 425);
   return lm;
 }
 /** Image: skin everywhere inside the face, hair above y=160, background outside x 210..390. */
 const SKIN: [number, number, number] = [214, 180, 160], HAIR: [number, number, number] = [70, 55, 45], BG: [number, number, number] = [40, 120, 200];
-const px = (hairY: number, beardTo?: number): PixelFn => (x, y) => {
+const px = (hairY: number, beardTo?: number, beard: [number, number, number] = HAIR, fringeTo?: number): PixelFn => (x, y) => {
   if (x < 0 || y < 0 || x >= 600 || y >= 800) return null;
   if (x < 210 || x > 390) return BG;
   if (y < hairY) return HAIR;
-  if (beardTo && y > 470 && y < beardTo && x > 260 && x < 340) return HAIR;
+  if (fringeTo && y < fringeTo) return HAIR; // fringe hanging down over the forehead
+  if (beardTo && y > 440 && y < beardTo && x > 250 && x < 350) return beard;
   return SKIN;
 };
+const GREY_BEARD: [number, number, number] = [165, 160, 155];
 
 describe('facial proportions', () => {
   it('pose from identity matrix is 0/0/0', () => {
@@ -40,6 +43,21 @@ describe('facial proportions', () => {
     expect(Math.abs(d.chin!.y - 520)).toBeLessThan(8);
     expect(Math.abs(d.edgeL!.x - 210)).toBeLessThan(6);
     expect(Math.abs(d.edgeR!.x - 390)).toBeLessThan(6);
+  });
+  it('a low fringe is found where it ends, not at the crown', () => {
+    // hair from the top down to y = 235: below landmark 10 (y 200), above the brows (glabella 280)
+    const d = detectEdges(face(), px(120, undefined, HAIR, 235));
+    expect(d.hairlineFound).toBe(true);
+    expect(Math.abs(d.hairline!.y - 235)).toBeLessThan(6);
+  });
+  it('a grey beard (lighter than the skin shadow) is still followed to its edge', () => {
+    const d = detectEdges(face(), px(160, 530, GREY_BEARD));
+    expect(d.beardFound).toBe(true);
+    expect(Math.abs(d.chin!.y - 530)).toBeLessThan(8);
+  });
+  it('clean-shaven chin stays at the menton', () => {
+    const d = detectEdges(face(), px(160));
+    expect(d.beardFound).toBe(false);
   });
   it('lines are in anatomical order in the levelled frame', () => {
     const lm = face();

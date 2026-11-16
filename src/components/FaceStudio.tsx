@@ -64,12 +64,12 @@ export function FaceStudio({ session: s, saved, onDelete, signedIn, onSaved, pro
           <div className="card">
             <h3 className="card__title">Thirds (as seen)</h3>
             {r.thirds.map((t) => <Bar key={t.key} label={t.label} value={t.share} target={1 / 3} level={t.level} right={`${fmt(t.mm, 0)} mm · ${Math.round(t.share * 100)}%`} />)}
-            <p className="small muted">Equal thirds (33% each) is a classical convention. Real, attractive faces vary, so only a third marked “stands out” is worth styling around. Lower third: upper lip is {Math.round(r.lowerSplit.upperLipShare * 100)}% of it (convention ≈ 33%).</p>
+            <p className="small muted">Equal thirds (33% each) is a classical convention, and real attractive faces vary. Differences under about 12% are normal and within measuring error, so only thirds marked “slightly” or “stands out” get tips. Lower third: upper lip is {Math.round(r.lowerSplit.upperLipShare * 100)}% of it (convention ≈ 33%).</p>
           </div>
           <div className="card">
             <h3 className="card__title">Fifths at eye level</h3>
-            {r.fifths.map((fi) => <Bar key={fi.key} label={fi.label} value={fi.ratioToEye / 2} target={0.5} level={fi.key === 'gap' ? r.spacing.level : 'Balanced'} right={`${fmt(fi.mm, 0)} mm · ${fi.ratioToEye.toFixed(2)}× eye`} />)}
-            <p className="small">Eye spacing: <strong>{r.spacing.label}</strong> (gap is {r.spacing.ratio.toFixed(2)}× an eye width). Face length to visible width: {r.lengthToWidth.toFixed(2)} ({r.shape.toLowerCase()}).</p>
+            {r.fifths.map((fi) => <Bar key={fi.key} label={fi.label} value={fi.ratioToEye / 2} target={0.5} level={fi.key === 'gap' ? r.spacing.level : null} right={`${fmt(fi.mm, 0)} mm · ${fi.ratioToEye.toFixed(2)}× eye`} />)}
+            <p className="small">Eye spacing: <strong>{r.spacing.label}</strong> (gap is {r.spacing.ratio.toFixed(2)}× an eye width). Nose width is {r.noseToGap.toFixed(2)}× the gap between the eyes (convention ≈ 1; most people are wider, and close selfies widen the nose). Face length to visible width: {r.lengthToWidth.toFixed(2)} ({r.shape.toLowerCase()}).</p>
             <p className="small muted">The outer two are your visible face width at eye level (hair over the temples counts), not the classic ear-to-ear fifths. Close selfies widen the centre of the face, so take this photo from arm's length or further.</p>
           </div>
 
@@ -147,8 +147,8 @@ export function FaceStudio({ session: s, saved, onDelete, signedIn, onSaved, pro
   );
 }
 
-function Bar({ label, value, target, level, right }: { label: string; value: number; target: number; level: string; right: string }) {
-  const tone = level === 'Balanced' ? 'ok' : level === 'Slightly' ? 'warn' : 'bad';
+function Bar({ label, value, target, level, right }: { label: string; value: number; target: number; level: string | null; right: string }) {
+  const tone = level === null ? 'neutral' : level === 'Balanced' ? 'ok' : level === 'Slightly' ? 'warn' : 'bad';
   return (
     <div className="pbar">
       <div className="pbar__top"><span>{label}</span><span className="small mono">{right}</span></div>
@@ -156,7 +156,7 @@ function Bar({ label, value, target, level, right }: { label: string; value: num
         <span className={`pbar__fill pbar__fill--${tone}`} style={{ width: `${Math.min(100, value * 100)}%` }} />
         <span className="pbar__target" style={{ left: `${target * 100}%` }} />
       </div>
-      <span className={`small pbar__lvl fit--${tone}`}>{level}</span>
+      <span className={`small pbar__lvl fit--${tone}`}>{level ?? ''}</span>
     </div>
   );
 }
