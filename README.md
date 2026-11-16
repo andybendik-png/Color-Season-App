@@ -2,11 +2,12 @@
 
 A mobile-first PWA for iPhone. Point the rear camera at a garment, fabric, paint or object. The app extracts the colour, converts it to HEX / RGB / HSL / CIELAB / OKLCH, and tells you whether the colour belongs to **Soft Summer**. If it doesn't, the app names the closest of the 12 seasonal sub-seasons.
 
-Everything runs on the device. No account, no backend, no uploads. Works offline after the first load.
+Colour analysis and face detection run on the device, and the live camera feed is never uploaded. Accounts are optional (Firebase). When you're signed in, saved colours, their capture photos, profiles and selfie analyses sync privately to your account. Works offline after the first load.
 
 ## Features
-- **Live scan**: rear camera, a central sampling circle (Small / Medium / Large), about 8 robust samples per second, and a live stability indicator (Stable / Moderate variation / Unstable).
+- **Live scan**: rear camera or selfie (front) camera with a Rear/Selfie switch, a central sampling circle (Small / Medium / Large), about 8 robust samples per second, and a live stability indicator (Stable / Moderate variation / Unstable).
 - **Freeze + colour picker**: freeze the frame, then tap anywhere on it to sample that point.
+- **Capture & save**: saves a small photo of the view with the sampled spot circled, plus a name, an item type (Top, Knitwear, Trousers / jeans, Shoes, Bag, Makeup, Home / paint…) and a note. On the Saved tab you can filter by item type.
 - **Soft Summer verdict**: Strong / Good / Possible / Weak / Poor match. Also shows a clothing verdict (Excellent / Suitable / Borderline / Not recommended), temperature, chroma and lightness fit, the reasons, the closest Soft Summer colour, and an alternative season.
 - **All 12 seasons ranked**: each season expands to show its nearest reference colours with ΔE00 values and its fit details.
 - **Visual calibration**: Warm↔Cool, Green↔Magenta, brightness, saturation, contrast and per-channel RGB controls. Includes undo / redo / reset, named profiles per lighting setup, and a raw ↔ corrected toggle.
