@@ -25,7 +25,7 @@ export function InfoPanel({ onAnalyse }: { onAnalyse: (hex: string) => void }) {
       <PaletteBrowser onAnalyse={onAnalyse} />
       <div className="card prose">
         <h3 className="card__title">Privacy</h3>
-        <p>The camera feed is processed on this device. No images are uploaded, there is no account, and saved colours live in this browser's storage only. Use Export to keep a backup.</p>
+        <p>Colour analysis and face detection run on this device. The live camera feed is never uploaded. Without an account, everything you save stays in this browser; use Export to keep a backup. If you sign in, your saved colours, their capture photos (which can include your face in selfie mode), calibration profiles and selfie analyses sync privately to your account, and only you can read them. Account › Delete account removes all cloud data.</p>
       </div>
     </section>
   );

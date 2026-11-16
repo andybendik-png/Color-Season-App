@@ -6,7 +6,7 @@ service cloud.firestore {
       allow read, delete: if request.auth != null && request.auth.uid == uid;
       allow create, update: if request.auth != null && request.auth.uid == uid
         && collection in ['samples', 'profiles', 'analyses', 'photos']
-        && request.resource.size() < 60;
+        && request.resource.data.size() < 60;
     }
     // Everything else is closed.
     match /{document=**} {

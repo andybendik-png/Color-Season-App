@@ -13,12 +13,13 @@ interface Props {
   onSave?: () => void;
   onCopy: (hex: string) => void;
   clipped?: boolean;
+  saveLabel?: string;
 }
 
 const matchClass = (m: string) => (m.startsWith('Strong') ? 'ok' : m.startsWith('Good') ? 'ok2' : m.startsWith('Possible') ? 'warn' : 'bad');
 const fitClass = (l: string) => (l === 'Excellent' ? 'ok' : l === 'Good' ? 'ok2' : l === 'Fair' ? 'warn' : 'bad');
 
-export function ColourResult({ analysis, rawHex, correctedHex, basis, onBasis, profileName, stability, onSave, onCopy, clipped }: Props) {
+export function ColourResult({ analysis, rawHex, correctedHex, basis, onBasis, profileName, stability, onSave, onCopy, clipped, saveLabel }: Props) {
   const c = analysis.colour;
   const p = analysis.primary;
   const f = p.result.fit;
@@ -88,7 +89,7 @@ export function ColourResult({ analysis, rawHex, correctedHex, basis, onBasis, p
         <p className="small muted">A precise HEX describes what the camera recorded under this light, not a verified measurement of the object.</p>
       </details>
 
-      {onSave && <button className="btn btn--primary btn--block" onClick={onSave}>Save sample</button>}
+      {onSave && <button className="btn btn--primary btn--block" onClick={onSave}>{saveLabel ?? 'Save colour'}</button>}
     </section>
   );
 }

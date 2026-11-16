@@ -26,7 +26,18 @@ export interface SavedSample {
   profile: { id: string; name: string; lighting: string; settings: CorrectionSettings } | null;
   inPalette: boolean;           // part of the personal Soft Summer palette
   notes?: string;
+  // Added Nov 2026; older samples may lack these.
+  updatedAt?: number;           // used by sync to pick the newer copy
+  photo?: string;               // small JPEG data URL (<= 480 px) of what was on screen, sampled spot ringed
+  category?: ItemCategory;
+  camera?: 'rear' | 'front';    // which camera took the reading
 }
+
+export const ITEM_CATEGORIES = [
+  'Top', 'Shirt / blouse', 'Knitwear', 'Jacket / coat', 'Blazer / suit', 'Dress', 'Skirt', 'Trousers / jeans',
+  'Scarf', 'Shoes', 'Bag', 'Jewellery / watch', 'Glasses', 'Makeup', 'Hair colour', 'Home / paint', 'Other',
+] as const;
+export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 
 export const listSamples = async () => (await dbGetAll<SavedSample>('samples')).sort((a, b) => b.createdAt - a.createdAt);
 export const putSample = (s: SavedSample) => dbPut('samples', s);

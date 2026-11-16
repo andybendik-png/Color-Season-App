@@ -17,9 +17,11 @@ interface Props {
   compact?: boolean;
   previewHex?: string;
   seasonChip?: { text: string; tone: 'ok' | 'warn' | 'bad' } | null;
+  /** Filled with a function that returns a small JPEG of what is on screen, with the sampled spot marked. */
+  captureRef?: React.MutableRefObject<(() => string | null) | null>;
 }
 
-export function CameraView({ camera, onSample, size, onSize, compact, previewHex, seasonChip }: Props) {
+export function CameraView({ camera, onSample, size, onSize, compact, previewHex, seasonChip, captureRef }: Props) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const frozenRef = useRef<HTMLCanvasElement | null>(null);
   const [frozen, setFrozen] = useState(false);
@@ -28,6 +30,8 @@ export function CameraView({ camera, onSample, size, onSize, compact, previewHex
   const [controlMsg, setControlMsg] = useState<string | null>(null);
   const radius = SIZE_RADIUS[size];
   const live = camera.state === 'live';
+  const mirrored = camera.facing === 'user';
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const sample = useColourSampling(video, live && !frozen, radius);
 
   useEffect(() => {
@@ -45,7 +49,12 @@ export function CameraView({ camera, onSample, size, onSize, compact, previewHex
     const c = frozenRef.current!;
     const k = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
     c.width = Math.round(video.videoWidth * k); c.height = Math.round(video.videoHeight * k);
-    c.getContext('2d', { willReadFrequently: true } as CanvasRenderingContext2DSettings)!.drawImage(video, 0, 0, c.width, c.height);
+    const ctx = c.getContext('2d', { willReadFrequently: true } as CanvasRenderingContext2DSettings)!;
+    ctx.save();
+    // Front camera: store the frame mirrored, exactly as the preview shows it, so taps map directly.
+    if (mirrored) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(video, 0, 0, c.width, c.height);
+    ctx.restore();
     setFrozen(true); setPick(null);
   };
   const resume = () => { setFrozen(false); setPick(null); };
@@ -63,6 +72,35 @@ export function CameraView({ camera, onSample, size, onSize, compact, previewHex
     }
   };
 
+  // Capture: crop to what is visible on screen (object-fit: cover), scale to <= 480 px, mark the sampled spot.
+  useEffect(() => {
+    if (!captureRef) return;
+    captureRef.current = () => {
+      const stage = stageRef.current;
+      if (!stage || !video) return null;
+      const src: CanvasImageSource | null = frozen ? frozenRef.current : video;
+      const sw = frozen ? frozenRef.current!.width : video.videoWidth, sh = frozen ? frozenRef.current!.height : video.videoHeight;
+      if (!src || !sw || !sh) return null;
+      const cw = stage.clientWidth, ch = stage.clientHeight;
+      const scale = Math.max(cw / sw, ch / sh);
+      const vw = cw / scale, vh = ch / scale, x0 = (sw - vw) / 2, y0 = (sh - vh) / 2;
+      const k = Math.min(1, 480 / Math.max(vw, vh));
+      const out = document.createElement('canvas');
+      out.width = Math.round(vw * k); out.height = Math.round(vh * k);
+      const ctx = out.getContext('2d')!;
+      ctx.save();
+      if (!frozen && mirrored) { ctx.translate(out.width, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(src, x0, y0, vw, vh, 0, 0, out.width, out.height);
+      ctx.restore();
+      const px = (pick ? pick.x : cw / 2) * (out.width / cw), py = (pick ? pick.y : ch / 2) * (out.height / ch);
+      const r = Math.max(5, radius * (out.width / cw));
+      ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.beginPath(); ctx.arc(px, py, r + 2, 0, Math.PI * 2); ctx.stroke();
+      return out.toDataURL('image/jpeg', 0.75);
+    };
+    return () => { captureRef.current = null; };
+  }, [captureRef, video, frozen, pick, radius, mirrored]);
+
   const stability = sample?.stability;
   const ctrlChange = async (name: Parameters<CameraApi['setControl']>[0], value: string | number) => {
     const r = await camera.setControl(name, value);
@@ -71,8 +109,8 @@ export function CameraView({ camera, onSample, size, onSize, compact, previewHex
 
   return (
     <div className={`camera ${compact ? 'camera--compact' : ''}`}>
-      <div className="camera__stage">
-        <video ref={setVideo} playsInline autoPlay muted className="camera__video" style={{ visibility: frozen ? 'hidden' : 'visible' }} />
+      <div className="camera__stage" ref={stageRef}>
+        <video ref={setVideo} playsInline autoPlay muted className="camera__video" style={{ visibility: frozen ? 'hidden' : 'visible', transform: mirrored ? 'scaleX(-1)' : undefined }} />
         <canvas ref={frozenRef} className="camera__frozen" style={{ display: frozen ? 'block' : 'none' }} onPointerDown={onTap} />
         {live && (
           <div className="reticle" style={{
@@ -87,8 +125,11 @@ export function CameraView({ camera, onSample, size, onSize, compact, previewHex
             {camera.state === 'starting' ? <p>Starting camera…</p> : (
               <>
                 <p className="camera__ph-title">Point the camera at a fabric, object or paint.</p>
-                <p className="camera__ph-sub">Processing happens on this device. Nothing is uploaded.</p>
-                <button className="btn btn--primary" onClick={camera.start}>Start camera</button>
+                <p className="camera__ph-sub">Colour analysis happens on this device. Captures you save sync to your account only if you're signed in.</p>
+                <div className="row gap">
+                  <button className="btn btn--primary" onClick={() => camera.start('environment')}>Start camera</button>
+                  <button className="btn" onClick={() => camera.start('user')}>Selfie camera</button>
+                </div>
                 {camera.error && <p className="camera__error" role="alert">{camera.error}</p>}
               </>
             )}
@@ -113,10 +154,12 @@ export function CameraView({ camera, onSample, size, onSize, compact, previewHex
           </div>
           <div className="camera__actions">
             {frozen ? <button className="btn btn--primary" onClick={resume}>Resume</button> : <button className="btn btn--primary" onClick={freeze}>Freeze</button>}
+            <button className="btn" onClick={() => camera.flip()} aria-label={mirrored ? 'Switch to rear camera' : 'Switch to selfie camera'} title="Switch camera">{mirrored ? 'Rear' : 'Selfie'}</button>
             <button className="btn" onClick={camera.stop}>Stop</button>
           </div>
         </div>
       )}
+      {live && mirrored && <p className="small muted">Selfie camera: hold the item next to your face. The front camera has its own colour processing, so a calibration profile made with the rear camera may not fit it. Make a separate profile if readings look off.</p>}
       {live && !compact && (
         <div className="camera__controls">
           <button className="linkbtn" onClick={() => setShowControls((v) => !v)} aria-expanded={showControls}>

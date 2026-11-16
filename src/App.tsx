@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SaveSheet, type SaveDraft } from './components/SaveSheet';
 import { useCamera } from './hooks/useCamera';
 import { CameraView, type CurrentSample, type SizeKey } from './components/CameraView';
 import { ColourResult } from './components/ColourResult';
@@ -17,7 +18,7 @@ import { applyCorrection, IDENTITY_CORRECTION, type CorrectionSettings } from '.
 import { describeHex, srgbToHex, hexToSrgb } from './engine/colourConversion';
 import { analyseColour, analyseHex } from './engine/seasonalMatching';
 import { deleteProfile, listProfiles, newProfile, saveProfile, type CalibrationProfile, type LightingKind } from './storage/calibrationProfiles';
-import { deleteSample, exportAll, importAll, listSamples, putSample, type SavedSample } from './storage/colourHistory';
+import { deleteSample, exportAll, importAll, listSamples, putSample, type ItemCategory, type SavedSample } from './storage/colourHistory';
 import { getSetting, setSetting, uid } from './storage/database';
 
 type Tab = 'scan' | 'selfie' | 'hex' | 'saved' | 'compare' | 'calibrate' | 'info';
@@ -40,6 +41,9 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [storageOk, setStorageOk] = useState(true);
   const [hexSeed, setHexSeed] = useState('#8E9196');
+  const captureRef = useRef<(() => string | null) | null>(null);
+  const [pending, setPending] = useState<{ draft: SaveDraft; rawHex: string; correctedHex: string; used: 'corrected' | 'raw'; source: SavedSample['source']; stability?: string; profile: CalibrationProfile | null; camera?: 'rear' | 'front' } | null>(null);
+  const [lastCategory, setLastCategory] = useState<ItemCategory | null>(null);
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
   const [user, setUser] = useState<CloudUser | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -60,6 +64,7 @@ export default function App() {
         if (pr) { setActiveId(pr.id); setDraft({ ...pr.settings }); }
         setBasis(await getSetting('basis', 'corrected'));
         setSize(await getSetting('size', 'M'));
+        setLastCategory(await getSetting<ItemCategory | null>('lastCategory', null));
       } catch { setStorageOk(false); }
     })();
   }, []);
@@ -114,26 +119,38 @@ export default function App() {
     try { await navigator.clipboard.writeText(hex); say(`Copied ${hex}`); } catch { say(`HEX: ${hex}`); }
   }, [say]);
 
-  const saveFrom = useCallback(async (rawHex: string, correctedHex: string, used: 'corrected' | 'raw', source: SavedSample['source'], stability?: string, profile?: CalibrationProfile | null) => {
+  const saveFrom = useCallback(async (rawHex: string, correctedHex: string, used: 'corrected' | 'raw', source: SavedSample['source'], stability?: string, profile?: CalibrationProfile | null,
+    extra: { name?: string; photo?: string | null; category?: ItemCategory | null; notes?: string; camera?: 'rear' | 'front' } = {}) => {
     const hex = used === 'raw' ? rawHex : correctedHex;
     const a = analyseHex(hex);
     const d = a.colour;
     const s: SavedSample = {
-      id: uid(), createdAt: Date.now(), name: `Near ${a.closestOverall.ref.name}`, source, basis: used, rawHex, correctedHex, hex,
+      id: uid(), createdAt: Date.now(), updatedAt: Date.now(), name: extra.name || `Near ${a.closestOverall.ref.name}`, source, basis: used, rawHex, correctedHex, hex,
       rgb: d.rgb, lab: d.lab, oklch: d.oklch, softSummerMatch: a.primary.result.match, softSummerIndex: a.primary.result.similarityIndex,
       clothing: a.primary.clothing, bestSeason: a.best.season.id, bestSeasonName: a.best.season.name, stability,
       profile: used === 'corrected' && profile ? { id: profile.id, name: profile.name, lighting: profile.lighting, settings: { ...profile.settings } } : null,
       inPalette: /Strong|Good/.test(a.primary.result.match),
+      ...(extra.photo ? { photo: extra.photo } : {}), ...(extra.category ? { category: extra.category } : {}),
+      ...(extra.notes ? { notes: extra.notes } : {}), ...(extra.camera ? { camera: extra.camera } : {}),
     };
     try { await putSample(s); setSamples((x) => [s, ...x]); say('Saved'); cloud(() => pushSample(s)); } catch { say('Could not save — storage unavailable'); }
   }, [say, cloud]);
 
+  const openSaveSheet = (rawHex: string, correctedHex: string, used: 'corrected' | 'raw', source: SavedSample['source'], stability: string | undefined, profile: CalibrationProfile | null, photo: string | null, camera?: 'rear' | 'front') => {
+    const hex = used === 'raw' ? rawHex : correctedHex;
+    const a = analyseHex(hex);
+    setPending({ draft: { hex, verdict: `${a.primary.result.match} · ${a.primary.clothing}`, photo, name: `Near ${a.closestOverall.ref.name}` }, rawHex, correctedHex, used, source, stability, profile, camera });
+  };
   const saveCurrent = () => {
     if (!measured || !current) return;
-    saveFrom(measured.rawHex, measured.correctedHex, basis, current.source === 'picker' ? 'picker' : 'camera', current.stability, active);
+    const live = camera.state === 'live';
+    let photo: string | null = null;
+    try { photo = live ? captureRef.current?.() ?? null : null; } catch { photo = null; }
+    openSaveSheet(measured.rawHex, measured.correctedHex, basis, current.source === 'picker' ? 'picker' : 'camera', current.stability, active, photo,
+      live ? (camera.facing === 'user' ? 'front' : 'rear') : undefined);
   };
 
-  const updateSample = async (s: SavedSample) => { await putSample(s); setSamples((x) => x.map((y) => (y.id === s.id ? s : y))); cloud(() => pushSample(s)); };
+  const updateSample = async (s0: SavedSample) => { const s = { ...s0, updatedAt: Date.now() }; await putSample(s); setSamples((x) => x.map((y) => (y.id === s.id ? s : y))); cloud(() => pushSample(s)); };
   const dropSample = async (id: string) => { await deleteSample(id); setSamples((x) => x.filter((y) => y.id !== id)); setCompareIds((c) => c.filter((y) => y !== id)); cloud(() => removeSample(id)); };
   const toggleCompare = (id: string) => setCompareIds((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
 
@@ -202,12 +219,12 @@ export default function App() {
       <main className="main">
         {tab === 'scan' && (
           <>
-            <CameraView camera={camera} onSample={onSample} size={size} onSize={(s) => { setSize(s); setSetting('size', s); }} previewHex={measured?.usedHex} seasonChip={seasonChip} />
+            <CameraView camera={camera} onSample={onSample} size={size} onSize={(s) => { setSize(s); setSetting('size', s); }} previewHex={measured?.usedHex} seasonChip={seasonChip} captureRef={captureRef} />
             {measured ? (
               <>
                 <ColourResult analysis={measured.analysis} rawHex={measured.rawHex} correctedHex={measured.correctedHex} basis={basis}
                   onBasis={(b) => { setBasis(b); setSetting('basis', b); }} profileName={active?.name ?? null}
-                  stability={current?.source === 'camera' ? current.stability : undefined} onSave={saveCurrent} onCopy={copy} clipped={measured.clipped} />
+                  stability={current?.source === 'camera' ? current.stability : undefined} onSave={saveCurrent} saveLabel={camera.state === 'live' ? 'Capture & save' : 'Save colour'} onCopy={copy} clipped={measured.clipped} />
                 <SeasonRanking analysis={measured.analysis} />
               </>
             ) : camera.state === 'live' ? <p className="small muted center">Reading colour…</p> : null}
@@ -218,7 +235,7 @@ export default function App() {
             onSave={async (a) => { await putAnalysis(a); setAnalyses((x) => [a, ...x.filter((y) => y.id !== a.id)]); say('Analysis saved'); cloud(() => pushAnalysis(a)); }}
             onDelete={async (id) => { await deleteAnalysis(id); setAnalyses((x) => x.filter((y) => y.id !== id)); cloud(() => removeAnalysis(id)); }} />
         )}
-        {tab === 'hex' && <HexAnalyser key={hexSeed} initial={hexSeed} onCopy={copy} onSave={(hex) => saveFrom(hex, hex, 'raw', 'manual')} />}
+        {tab === 'hex' && <HexAnalyser key={hexSeed} initial={hexSeed} onCopy={copy} onSave={(hex) => openSaveSheet(hex, hex, 'raw', 'manual', undefined, null, null)} />}
         {tab === 'saved' && (
           <ColourHistory samples={samples} compareIds={compareIds} onToggleCompare={toggleCompare} onUpdate={updateSample} onDelete={dropSample}
             onCopy={copy} onOpen={openSample} onExport={doExport} onImport={doImport} />
@@ -235,6 +252,16 @@ export default function App() {
       </main>
 
       {toast && <div className="toast" role="status">{toast}</div>}
+      {pending && (
+        <SaveSheet draft={pending.draft} lastCategory={lastCategory} onCancel={() => setPending(null)}
+          onSave={(v) => {
+            const p = pending;
+            setPending(null);
+            if (v.category) { setLastCategory(v.category); setSetting('lastCategory', v.category); }
+            saveFrom(p.rawHex, p.correctedHex, p.used, p.source, p.stability, p.profile,
+              { name: v.name, photo: v.includePhoto ? p.draft.photo : null, category: v.category, notes: v.notes, camera: p.camera });
+          }} />
+      )}
       {accountOpen && <AccountPanel user={user} syncing={syncing} lastSync={lastSync} onSync={doSync} onClose={() => setAccountOpen(false)} />}
 
       <nav className="tabbar" aria-label="Sections">

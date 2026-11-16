@@ -68,9 +68,17 @@ The UI (`AccountPanel.tsx`) and the local IndexedDB store stay as they are.
 
 Whichever you choose: face photos are biometric-adjacent personal data. Keep them private per user, offer deletion (already in the UI) and choose an EU data location.
 
+## 4b. Changes 16 Nov 2026: capture, item types, selfie camera
+- **Capture & save** on the Scan tab saves a small photo (480 px max JPEG) of what is on screen, with the sampled spot circled. A save sheet then asks for a name, an item type (Top, Knitwear, Trousers / jeans, Shoes, Bag, Makeup, Home / paint and so on) and an optional note. The photo is stored inline in the sample (`SavedSample.photo`), so it syncs with no new Firestore collection.
+- **Saved tab:** photo thumbnails, an item-type filter, item type editable per colour, a full-size photo view and "Remove photo, keep colour".
+- **Selfie camera:** a Rear/Selfie switch on the camera view. The front-camera preview and the frozen frame are both mirrored, so tap-to-pick matches what you see (e2e-tested with a split-colour feed). Samples record `camera: 'front' | 'rear'`.
+- Samples now carry `updatedAt`, so edits sync as the newer copy.
+- **⚠ Firestore rules fix, needs redeploying:** `request.resource.size()` is not valid on a resource. It is now `request.resource.data.size()`. If the old rules are what's deployed, every cloud write may be denied. Redeploy with `firebase deploy --only firestore:rules --project color-season-app`, then confirm one signed-in save shows up in the Firestore console.
+- Not tested on a real iPhone: front camera switching, and Safari's handling of `facingMode: 'user'`.
+
 ## 5. Known gaps / next steps
 1. Test everything in section 2 on a real iPhone.
-2. Add photos to the JSON export, so that people without accounts can back them up.
+2. Add selfie-analysis photos to the JSON export (capture photos are already included, because they are stored inside the samples).
 3. Add delete tombstones to sync.
 4. Validate the selfie scoring against real draped results and tune the thresholds in `faceAnalysis.ts`.
 5. Optionally add a calibration-card workflow (colour checker) for objective camera correction.

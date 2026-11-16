@@ -15,13 +15,15 @@ export interface ControlInfo {
 
 export interface CameraInfo { label: string; width: number; height: number; frameRate?: number; controls: ControlInfo[]; capabilitiesApi: boolean }
 
-export async function startCamera(): Promise<MediaStream> {
+export type Facing = 'environment' | 'user';
+
+export async function startCamera(facing: Facing = 'environment'): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('This browser does not expose camera access (navigator.mediaDevices). On iPhone, open the app in Safari over HTTPS.');
   }
   const attempts: MediaStreamConstraints[] = [
-    { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
-    { audio: false, video: { facingMode: 'environment' } },
+    { audio: false, video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
+    { audio: false, video: { facingMode: facing } },
     { audio: false, video: true },
   ];
   let last: unknown;

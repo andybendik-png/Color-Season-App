@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { applyControl, describeCameraError, readCameraInfo, startCamera, stopStream, type CameraInfo, type ControlName } from '../engine/camera';
+import { applyControl, describeCameraError, readCameraInfo, startCamera, stopStream, type CameraInfo, type ControlName, type Facing } from '../engine/camera';
 
 export type CameraState = 'idle' | 'starting' | 'live' | 'error';
 
@@ -9,17 +9,21 @@ export function useCamera() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<CameraInfo | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [facing, setFacing] = useState<Facing>('environment');
+  const facingRef = useRef<Facing>('environment');
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (want?: Facing) => {
     if (streamRef.current) return;
+    const f = want ?? facingRef.current;
+    facingRef.current = f; setFacing(f);
     setState('starting'); setError(null);
     try {
-      const s = await startCamera();
+      const s = await startCamera(f);
       streamRef.current = s;
       setStream(s);
       const track = s.getVideoTracks()[0];
       setInfo(readCameraInfo(track));
-      track.addEventListener('ended', () => { streamRef.current = null; setStream(null); setState('idle'); });
+      track.addEventListener('ended', () => { if (streamRef.current === s) { streamRef.current = null; setStream(null); setState('idle'); } });
       setState('live');
     } catch (e) {
       setError(describeCameraError(e)); setState('error');
@@ -30,6 +34,14 @@ export function useCamera() {
     stopStream(streamRef.current);
     streamRef.current = null; setStream(null); setState('idle');
   }, []);
+
+  /** Switch between rear camera and front (selfie) camera. Old tracks are stopped first: iOS allows one camera at a time. */
+  const flip = useCallback(async () => {
+    const next: Facing = facingRef.current === 'environment' ? 'user' : 'environment';
+    stopStream(streamRef.current);
+    streamRef.current = null; setStream(null);
+    await start(next);
+  }, [start]);
 
   const setControl = useCallback(async (name: ControlName, value: string | number) => {
     const track = streamRef.current?.getVideoTracks()[0];
@@ -51,6 +63,6 @@ export function useCamera() {
     return () => { document.removeEventListener('visibilitychange', onVis); stopStream(streamRef.current); };
   }, [stop]);
 
-  return { state, error, info, stream, start, stop, setControl };
+  return { state, error, info, stream, facing, start, stop, flip, setControl };
 }
 export type CameraApi = ReturnType<typeof useCamera>;
