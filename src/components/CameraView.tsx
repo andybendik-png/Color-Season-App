@@ -19,9 +19,12 @@ interface Props {
   seasonChip?: { text: string; tone: 'ok' | 'warn' | 'bad' } | null;
   /** Filled with a function that returns a small JPEG of what is on screen, with the sampled spot marked. */
   captureRef?: React.MutableRefObject<(() => string | null) | null>;
+  /** When set, a Capture button sits directly under the camera. */
+  onCapture?: () => void;
+  captureDisabled?: boolean;
 }
 
-export function CameraView({ camera, onSample, size, onSize, compact, previewHex, seasonChip, captureRef }: Props) {
+export function CameraView({ camera, onSample, size, onSize, compact, previewHex, seasonChip, captureRef, onCapture, captureDisabled }: Props) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const frozenRef = useRef<HTMLCanvasElement | null>(null);
   const [frozen, setFrozen] = useState(false);
@@ -144,6 +147,15 @@ export function CameraView({ camera, onSample, size, onSize, compact, previewHex
         )}
       </div>
       {live && (
+        <>
+        {onCapture && (
+          <div className="camera__capture">
+            <button className="btn btn--primary btn--capture" onClick={onCapture} disabled={captureDisabled}>
+              <span className="btn__dot" aria-hidden />Capture
+            </button>
+            {frozen ? <button className="btn" onClick={resume}>Resume</button> : <button className="btn" onClick={freeze}>Freeze</button>}
+          </div>
+        )}
         <div className="camera__bar">
           <div className="seg" role="group" aria-label="Sampling area">
             {(['S', 'M', 'L'] as SizeKey[]).map((k) => (
@@ -153,11 +165,12 @@ export function CameraView({ camera, onSample, size, onSize, compact, previewHex
             ))}
           </div>
           <div className="camera__actions">
-            {frozen ? <button className="btn btn--primary" onClick={resume}>Resume</button> : <button className="btn btn--primary" onClick={freeze}>Freeze</button>}
+            {!onCapture && (frozen ? <button className="btn btn--primary" onClick={resume}>Resume</button> : <button className="btn btn--primary" onClick={freeze}>Freeze</button>)}
             <button className="btn" onClick={() => camera.flip()} aria-label={mirrored ? 'Switch to rear camera' : 'Switch to selfie camera'} title="Switch camera">{mirrored ? 'Rear' : 'Selfie'}</button>
             <button className="btn" onClick={camera.stop}>Stop</button>
           </div>
         </div>
+        </>
       )}
       {live && mirrored && <p className="small muted">Selfie camera: hold the item next to your face. The front camera has its own colour processing, so a calibration profile made with the rear camera may not fit it. Make a separate profile if readings look off.</p>}
       {live && !compact && (

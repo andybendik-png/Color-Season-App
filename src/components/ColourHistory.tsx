@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ITEM_CATEGORIES, type ItemCategory, type SavedSample } from '../storage/colourHistory';
-import { fmtDate } from './format';
+import { fmtDate, fmt } from './format';
+import { analyseHex } from '../engine/seasonalMatching';
 
 type Filter = 'all' | 'palette' | 'fits' | 'borderline' | 'not';
 interface Props {
@@ -102,7 +103,7 @@ export function ColourHistory({ samples, compareIds, onToggleCompare, onUpdate, 
         <div className="sheet" role="dialog" aria-modal="true" aria-label={viewing.name} onClick={() => setViewing(null)}>
           <div className="sheet__panel" onClick={(e) => e.stopPropagation()}>
             <div className="sheet__head"><h2 className="card__title">{viewing.name}</h2><button className="linkbtn" onClick={() => setViewing(null)}>Close</button></div>
-            <img className="capture__full" src={viewing.photo} alt={`Photo of ${viewing.name}; the ring shows the sampled spot`} />
+            <PhotoWithBadges sample={viewing} />
             <p className="small"><span className="sw" style={{ background: viewing.hex }} /><span className="mono">{viewing.hex}</span> · {viewing.clothing}{viewing.category ? ` · ${viewing.category}` : ''}</p>
             <button className="btn btn--block" onClick={() => { onUpdate({ ...viewing, photo: undefined }); setViewing(null); }}>Remove photo, keep colour</button>
           </div>
@@ -114,5 +115,24 @@ export function ColourHistory({ samples, compareIds, onToggleCompare, onUpdate, 
       </div>
       <p className="small muted">Export includes saved colours (with their photos) and calibration profiles. Without an account, everything stays on this device.</p>
     </section>
+  );
+}
+
+/** Saved photo with two corner badges: the item's colour + closest season, and the nearest Soft Summer colour. */
+function PhotoWithBadges({ sample }: { sample: SavedSample }) {
+  const a = useMemo(() => analyseHex(sample.hex), [sample.hex]);
+  const ref = a.primary.closestReference;
+  return (
+    <div className="shot">
+      <img className="capture__full" src={sample.photo} alt={`Photo of ${sample.name}; the ring shows the sampled spot`} />
+      <div className="shot__badge shot__badge--tr">
+        <span className="shot__sw" style={{ background: sample.hex }} />
+        <span><strong>{a.best.season.name}</strong><br /><span className="mono">{sample.hex}</span></span>
+      </div>
+      <div className="shot__badge shot__badge--bl">
+        <span className="shot__sw" style={{ background: ref.ref.hex }} />
+        <span><strong>Closest Soft Summer</strong><br />{ref.ref.name} <span className="mono">{ref.ref.hex}</span> · ΔE {fmt(ref.deltaE, 1)}</span>
+      </div>
+    </div>
   );
 }

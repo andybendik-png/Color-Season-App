@@ -219,7 +219,7 @@ export default function App() {
       <main className="main">
         {tab === 'scan' && (
           <>
-            <CameraView camera={camera} onSample={onSample} size={size} onSize={(s) => { setSize(s); setSetting('size', s); }} previewHex={measured?.usedHex} seasonChip={seasonChip} captureRef={captureRef} />
+            <CameraView camera={camera} onSample={onSample} size={size} onSize={(s) => { setSize(s); setSetting('size', s); }} previewHex={measured?.usedHex} seasonChip={seasonChip} captureRef={captureRef} onCapture={saveCurrent} captureDisabled={!measured} />
             {measured ? (
               <>
                 <ColourResult analysis={measured.analysis} rawHex={measured.rawHex} correctedHex={measured.correctedHex} basis={basis}
